@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research — Mindbase</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <style>
+    .step-card { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:10px; box-shadow:0 6px 18px -12px rgba(0,0,0,0.6); }
+    .step-card-title { font-size:13px; font-weight:500; color:var(--text-primary); margin-bottom:6px; }
+    .progress-bar { height:3px; background:var(--border-subtle); border-radius:99px; overflow:hidden; margin-bottom:12px; }
+    .progress-fill { height:100%; background:linear-gradient(90deg, var(--accent), #9aa6ff); border-radius:99px; transition:width 400ms ease; width:0; box-shadow:0 0 8px rgba(109,124,255,0.5); }
+    /* Quick-start suggestion chips */
+    .suggest-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+    .suggest-chip { font-size:12px; font-weight:300; color:var(--text-secondary); background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:999px; padding:6px 13px; cursor:pointer; transition:border-color 150ms ease, color 150ms ease, background 150ms ease, transform 120ms ease; }
+    .suggest-chip:hover { border-color:var(--accent-border); color:var(--text-primary); background:var(--accent-soft); }
+    .suggest-chip:active { transform:scale(0.96); }
+    .suggest-label { font-size:10.5px; font-weight:500; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-tertiary); margin:18px 0 10px; }
+    .report-content { font-size:13.5px; font-weight:300; color:var(--text-secondary); line-height:1.75; }
+    .report-content h1,.report-content h2,.report-content h3 { font-weight:500; color:var(--text-primary); margin:16px 0 6px; }
+    .report-content p { margin:8px 0; }
+    .report-content ul,.report-content ol { padding-left:18px; margin:8px 0; }
+    .report-content li { margin:3px 0; }
+    .report-content code { font-family:var(--mono); font-size:12px; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:3px; padding:1px 5px; }
+    .report-content blockquote { border-left:2px solid var(--border-mid); padding-left:12px; color:var(--text-tertiary); margin:10px 0; }
+    @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:.8} }
+    .spin { animation:spin 1s linear infinite; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Research</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content narrow">
+
+    <!-- Input -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-title">Start research</div>
+      <div class="card-subtitle" style="margin:-8px 0 16px">Mindbase runs multi-step research and writes you a cited report you can save to notes.</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <input id="researchQuery" type="text" placeholder="What would you like to research?">
+        <button class="btn btn-primary btn-full" id="startResearchBtn">Start research</button>
+      </div>
+    </div>
+
+    <!-- Quick-start suggestions (hidden once research begins) -->
+    <div id="suggestSection">
+      <div class="suggest-label">Try researching</div>
+      <div class="suggest-row">
+        <button class="suggest-chip">Latest breakthroughs in AI agents</button>
+        <button class="suggest-chip">Compare PostgreSQL vs MongoDB</button>
+        <button class="suggest-chip">How does retrieval-augmented generation work?</button>
+        <button class="suggest-chip">Best practices for local-first apps</button>
+        <button class="suggest-chip">Pros and cons of self-hosting LLMs</button>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div id="progressSection" style="display:none">
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="card-title" style="margin-bottom:0">Progress</div>
+          <span id="stepCount" style="font-size:11px;color:var(--text-tertiary)">0 / 0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div id="currentStep" style="font-size:12.5px;color:var(--text-secondary);font-weight:300">Initialising…</div>
+      </div>
+
+      <div id="stepsContainer" style="margin-bottom:16px"></div>
+
+      <!-- Report -->
+      <div id="reportSection" style="display:none">
+        <div class="card">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px">
+            <div id="reportTitle" style="font-size:16px;font-weight:500;color:var(--text-primary);line-height:1.4"></div>
+            <button class="btn btn-ghost" id="saveReportBtn" style="flex-shrink:0;font-size:12px">Save to notes</button>
+          </div>
+          <div class="report-content" id="reportContent"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="../js/toast.js"></script>
+<script>
+  const API_BASE = '/api';
+  let currentReport = null, abortCtrl = null;
+
+  // Quick-start chips fill the query and focus the input
+  const queryInput = document.getElementById('researchQuery');
+  document.querySelectorAll('.suggest-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      queryInput.value = chip.textContent.trim();
+      queryInput.focus();
+    });
+  });
+  // Enter key in the query box starts research
+  queryInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('startResearchBtn').click(); }
+  });
+
+  document.getElementById('startResearchBtn').addEventListener('click', async () => {
+    const query = document.getElementById('researchQuery').value.trim();
+    if (!query) { toast('Enter a research query.', 'error'); return; }
+
+    const suggest = document.getElementById('suggestSection');
+    if (suggest) suggest.style.display = 'none';
+
+    if (abortCtrl) abortCtrl.abort();
+    abortCtrl = new AbortController();
+    const timeout = setTimeout(() => abortCtrl.abort(), 120000);
+
+    document.getElementById('progressSection').style.display = 'block';
+    document.getElementById('reportSection').style.display = 'none';
+    document.getElementById('stepsContainer').innerHTML = '';
+    document.getElementById('progressFill').style.width = '0';
+    document.getElementById('stepCount').textContent = '0 / 0';
+    document.getElementById('currentStep').textContent = 'Initialising…';
+    currentReport = null;
+
+    const saveBtn = document.getElementById('saveReportBtn');
+    saveBtn.textContent = 'Save to notes'; saveBtn.disabled = false;
+
+    try {
+      const res = await fetch(`${API_BASE}/research`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query}), signal: abortCtrl.signal });
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const {done,value} = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, {stream:true});
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try { handleUpdate(JSON.parse(line.slice(6))); } catch(e) {}
+        }
+      }
+    } catch(e) {
+      if (e.name !== 'AbortError') document.getElementById('currentStep').textContent = 'Research failed: ' + e.message;
+    } finally { clearTimeout(timeout); }
+  });
+
+  function handleUpdate(data) {
+    if (data.type === 'step') {
+      document.getElementById('stepCount').textContent = `${data.number} / ${data.total}`;
+      document.getElementById('progressFill').style.width = `${(data.number/data.total)*100}%`;
+      document.getElementById('currentStep').textContent = `Researching: ${data.query}`;
+      const el = document.createElement('div');
+      el.className = 'step-card';
+      el.dataset.step = data.number;
+      el.innerHTML = `<div class="step-card-title" style="display:flex;align-items:center;gap:8px">
+        <svg width="14" height="14" viewBox="0 0 14 14" class="spin" style="flex-shrink:0;color:var(--text-tertiary)"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="20" stroke-dashoffset="7"/></svg>
+        Step ${data.number}: ${data.query}</div>
+        <div style="font-size:12px;color:var(--text-tertiary)">Gathering findings…</div>`;
+      document.getElementById('stepsContainer').appendChild(el);
+    }
+    if (data.type === 'findings') {
+      const steps = document.querySelectorAll('.step-card');
+      if (steps.length) {
+        const last = steps[steps.length-1];
+        last.innerHTML = `<div class="step-card-title">${data.query}</div>
+          <ul style="font-size:12.5px;color:var(--text-secondary);font-weight:300;padding-left:16px;margin-top:6px;line-height:1.6">
+            ${data.findings.map(f=>`<li>${f}</li>`).join('')}
+          </ul>`;
+      }
+    }
+    if (data.type === 'report') {
+      currentReport = data;
+      document.getElementById('reportTitle').textContent = data.title;
+      document.getElementById('reportContent').innerHTML = DOMPurify ? DOMPurify.sanitize(marked.parse(data.content)) : marked.parse(data.content);
+      document.getElementById('reportSection').style.display = 'block';
+      document.getElementById('currentStep').textContent = 'Research complete.';
+      document.getElementById('progressFill').style.width = '100%';
+      if (data.saved_to_notes) { const btn=document.getElementById('saveReportBtn'); btn.textContent='Saved'; btn.disabled=true; }
+    }
+    if (data.type === 'error') {
+      document.getElementById('currentStep').textContent = 'Failed: ' + data.message;
+    }
+  }
+
+  document.getElementById('saveReportBtn').addEventListener('click', async () => {
+    if (!currentReport) return;
+    const btn = document.getElementById('saveReportBtn');
+    btn.disabled=true; btn.textContent='Saving…';
+    try {
+      await fetch(`${API_BASE}/research/save`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({report:currentReport})});
+      btn.textContent = 'Saved';
+    } catch(e) { btn.textContent='Error'; btn.disabled=false; }
+  });
+</script>
+</body>
+</html>

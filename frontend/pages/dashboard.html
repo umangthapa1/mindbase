@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Dashboard</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content wide">
+    <div class="grid-4" style="margin-bottom:24px">
+      <div class="stat-card"><div class="stat-label">Conversations</div><div class="stat-value" id="statConversations">—</div></div>
+      <div class="stat-card"><div class="stat-label">Notes</div><div class="stat-value" id="statNotes">—</div></div>
+      <div class="stat-card"><div class="stat-label">Tasks</div><div class="stat-value" id="statTasks">—</div></div>
+      <div class="stat-card"><div class="stat-label">Memories</div><div class="stat-value" id="statMemories">—</div></div>
+      <div class="stat-card"><div class="stat-label">Documents</div><div class="stat-value" id="statDocuments">—</div></div>
+      <div class="stat-card"><div class="stat-label">Active model</div><div class="stat-value" id="statModel" style="font-size:15px;margin-top:4px">—</div></div>
+      <div class="stat-card"><div class="stat-label">Status</div><div class="stat-value" id="statStatus" style="font-size:15px;margin-top:4px">—</div></div>
+      <div class="stat-card"><div class="stat-label">Uptime</div><div class="stat-value" id="statUptime" style="font-size:15px;margin-top:4px">—</div></div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:24px">
+      <div class="card">
+        <div class="card-title">Recent notes</div>
+        <div id="recentNotes" class="empty-state" style="padding:16px 0">Loading…</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pending tasks</div>
+        <div id="pendingTasks" class="empty-state" style="padding:16px 0">Loading…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">System</div>
+      <div class="grid-2" style="gap:16px">
+        <div><div class="field-label" style="margin-bottom:4px">Backend URL</div><code id="apiUrl">—</code></div>
+        <div><div class="field-label" style="margin-bottom:4px">Ollama</div><span id="ollamaStatus" style="color:var(--text-secondary);font-size:13px">Checking…</span></div>
+        <div><div class="field-label" style="margin-bottom:4px">Database</div><span style="color:var(--text-secondary);font-size:13px">SQLite</span></div>
+        <div><div class="field-label" style="margin-bottom:4px">Vector store</div><span style="color:var(--text-secondary);font-size:13px">ChromaDB</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="../js/toast.js"></script>
+<script>
+  const API_BASE = '/api';
+  const startTime = Date.now();
+  async function loadDashboard() {
+    try {
+      const health = await fetch(`${API_BASE}/health`).then(r => r.json());
+      document.getElementById('statModel').textContent = health.current_model || 'None';
+      const online = health.ollama === 'connected';
+      document.getElementById('statStatus').textContent = online ? 'Online' : 'Offline';
+      document.getElementById('ollamaStatus').textContent = online ? 'Connected' : 'Disconnected';
+      document.getElementById('ollamaStatus').style.color = online ? 'rgba(74,222,128,0.8)' : 'rgba(248,113,113,0.8)';
+      document.getElementById('apiUrl').textContent = location.origin;
+      const convs = await fetch(`${API_BASE}/chat/conversations`).then(r => r.json());
+      document.getElementById('statConversations').textContent = convs.length || '0';
+      const notes = await fetch(`${API_BASE}/notes`).then(r => r.json());
+      document.getElementById('statNotes').textContent = notes.count || '0';
+      displayRecentNotes(notes.notes);
+      const tasks = await fetch(`${API_BASE}/tasks`).then(r => r.json());
+      const pending = tasks.tasks.filter(t => t.status !== 'completed');
+      document.getElementById('statTasks').textContent = pending.length || '0';
+      displayPendingTasks(tasks.tasks);
+      const memories = await fetch(`${API_BASE}/memory/list`).then(r => r.json());
+      document.getElementById('statMemories').textContent = memories.count || '0';
+      const docs = await fetch(`${API_BASE}/documents`).then(r => r.json());
+      document.getElementById('statDocuments').textContent = docs.count || '0';
+      updateUptime();
+    } catch(e) { console.error(e); toast('Could not load dashboard data.', 'error'); }
+  }
+  function displayRecentNotes(notes) {
+    const el = document.getElementById('recentNotes');
+    if (!notes || !notes.length) { el.textContent = 'No notes yet.'; return; }
+    el.innerHTML = '';
+    el.style.padding = '0';
+    notes.slice(0,5).forEach(n => {
+      const d = document.createElement('div');
+      d.className = 'list-item';
+      d.style.cssText = 'margin-bottom:6px;cursor:pointer';
+      d.innerHTML = `<span style="font-size:12.5px;font-weight:300;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.title}</span><span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0">${new Date(n.created_at).toLocaleDateString()}</span>`;
+      el.appendChild(d);
+    });
+  }
+  function displayPendingTasks(tasks) {
+    const el = document.getElementById('pendingTasks');
+    const pending = tasks.filter(t => t.status !== 'completed').slice(0,5);
+    if (!pending.length) { el.textContent = 'All caught up.'; return; }
+    el.innerHTML = '';
+    el.style.padding = '0';
+    const dot = { low:'rgba(74,222,128,0.7)', medium:'rgba(250,204,21,0.7)', high:'rgba(248,113,113,0.7)' };
+    pending.forEach(t => {
+      const d = document.createElement('div');
+      d.className = 'list-item';
+      d.style.marginBottom = '6px';
+      d.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="width:6px;height:6px;border-radius:50%;background:${dot[t.priority]};flex-shrink:0"></span><span style="font-size:12.5px;font-weight:300;color:var(--text-primary)">${t.title}</span></div><span style="font-size:11px;color:var(--text-tertiary)">${t.status==='in_progress'?'in progress':'pending'}</span>`;
+      el.appendChild(d);
+    });
+  }
+  function updateUptime() {
+    const s = Math.floor((Date.now()-startTime)/1000);
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+    document.getElementById('statUptime').textContent = h>0 ? `${h}h ${m}m` : `${m}m`;
+  }
+  loadDashboard();
+  setInterval(updateUptime, 30000);
+</script>
+</body>
+</html>

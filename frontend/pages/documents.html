@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documents — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <style>
+    .doc-card { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:10px; transition:border-color 150ms ease; }
+    .doc-card:hover { border-color:var(--border-mid); }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px; }
+    .modal { background:var(--bg-surface); border:1px solid var(--border-mid); border-radius:14px; max-width:560px; width:100%; padding:28px; }
+    .drop-zone.uploading { border-color:var(--accent-border); position:relative; pointer-events:none; }
+    .drop-zone.uploading::after { content:''; position:absolute; left:0; bottom:0; height:2px; width:40%; background:var(--accent); border-radius:2px; animation:dzProgress 1.1s var(--ease) infinite; }
+    @keyframes dzProgress { 0%{ left:-40%; } 100%{ left:100%; } }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Documents</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content">
+
+    <!-- Upload -->
+    <div class="card" style="margin-bottom:32px">
+      <div class="card-title">Upload</div>
+      <div class="drop-zone" id="dropZone">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 12px;color:var(--text-tertiary)"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:4px">Drop files here or click to upload</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">PDF, TXT, DOCX</div>
+        <input id="fileInput" type="file" accept=".pdf,.txt,.docx" multiple style="display:none">
+      </div>
+    </div>
+
+    <!-- List -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="section-label" style="margin-bottom:0">Your documents</div>
+      <span id="docCount" style="font-size:11px;color:var(--text-tertiary)">Loading…</span>
+    </div>
+    <div id="documentsList" class="grid-3"><div class="empty-state col-span-3">Loading documents…</div></div>
+  </div>
+</div>
+
+<!-- Q&A Modal -->
+<div id="qaModal" style="display:none" class="modal-overlay">
+  <div class="modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <span id="qaDocTitle" style="font-size:14px;font-weight:500;color:var(--text-primary)">Ask about this document</span>
+      <button class="icon-x close-modal" aria-label="Close" style="color:var(--text-secondary)"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <input id="qaQuestion" type="text" placeholder="What does this document say about…">
+      <button class="btn btn-primary btn-full" id="askBtn">Ask</button>
+      <div id="qaAnswer" style="display:none;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:8px;padding:14px;font-size:13px;font-weight:300;line-height:1.6;color:var(--text-primary)"></div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/toast.js"></script>
+<script>
+  const API_BASE = '/api';
+  let currentDocId = null;
+
+  async function loadDocuments() {
+    try {
+      const res = await fetch(`${API_BASE}/documents`);
+      const data = await res.json();
+      displayDocuments(data.documents || []);
+      document.getElementById('docCount').textContent = `${data.count || 0} documents`;
+    } catch(e) { document.getElementById('documentsList').innerHTML = '<div class="empty-state">Error loading documents.</div>'; }
+  }
+
+  function displayDocuments(docs) {
+    const list = document.getElementById('documentsList');
+    if (!docs.length) { list.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No documents yet. Upload one to get started.</div>'; return; }
+    list.innerHTML = docs.map(doc => `
+      <div class="doc-card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div><div style="font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${doc.filename}</div>
+          <div style="font-size:11px;color:var(--text-tertiary)">${doc.type} · ${doc.chunks} chunks</div></div>
+          <button class="icon-x delete-doc-btn" aria-label="Delete document" title="Delete document" style="flex-shrink:0;color:var(--text-secondary)" data-id="${doc.id}"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost qa-btn" style="flex:1;font-size:12px" data-id="${doc.id}">Ask</button>
+          <button class="btn btn-ghost summary-btn" style="flex:1;font-size:12px" data-id="${doc.id}">Summary</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${new Date(doc.created_at).toLocaleDateString()}</div>
+      </div>`).join('');
+
+    document.querySelectorAll('.qa-btn').forEach(btn => btn.addEventListener('click', () => { currentDocId = btn.dataset.id; document.getElementById('qaModal').style.display='flex'; document.getElementById('qaQuestion').value=''; document.getElementById('qaAnswer').style.display='none'; }));
+    document.querySelectorAll('.delete-doc-btn').forEach(btn => btn.addEventListener('click', async () => { if(!await confirmDialog('Delete this document?')) return; await fetch(`${API_BASE}/documents/${btn.dataset.id}`,{method:'DELETE'}); loadDocuments(); toast('Document deleted', 'info'); }));
+    document.querySelectorAll('.summary-btn').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled=true; btn.textContent='Summarizing…';
+      try { const res = await fetch(`${API_BASE}/documents/${btn.dataset.id}/summary`,{method:'POST'}); const data = await res.json(); toast(data.summary||'No summary available', 'info', 8000); }
+      catch(e) { toast('Error: '+e.message, 'error'); }
+      finally { btn.disabled=false; btn.textContent='Summary'; }
+    }));
+  }
+
+  document.getElementById('dropZone').addEventListener('click', () => document.getElementById('fileInput').click());
+  document.getElementById('fileInput').addEventListener('change', async e => { for(const f of Array.from(e.target.files)) await uploadFile(f); e.target.value=''; });
+  document.getElementById('dropZone').addEventListener('dragover', e => { e.preventDefault(); document.getElementById('dropZone').classList.add('dragover'); });
+  document.getElementById('dropZone').addEventListener('dragleave', () => document.getElementById('dropZone').classList.remove('dragover'));
+  document.getElementById('dropZone').addEventListener('drop', async e => { e.preventDefault(); document.getElementById('dropZone').classList.remove('dragover'); for(const f of Array.from(e.dataTransfer.files)) await uploadFile(f); });
+
+  async function uploadFile(file) {
+    if (file.size > 50*1024*1024) { toast(`${file.name} is too large (max 50 MB)`, 'error'); return; }
+    const fd = new FormData(); fd.append('file', file);
+    const zone = document.getElementById('dropZone');
+    zone.classList.add('uploading');
+    const pending = toast(`Uploading ${file.name}…`, 'info', 60000);
+    try {
+      const res = await fetch(`${API_BASE}/documents/upload`,{method:'POST',body:fd});
+      pending.remove();
+      if(res.ok) { loadDocuments(); toast(`Uploaded ${file.name}`, 'ok'); }
+      else { toast(`Failed to upload ${file.name}`, 'error'); }
+    }
+    catch(e) { pending.remove(); toast('Error: '+e.message, 'error'); }
+    finally { zone.classList.remove('uploading'); }
+  }
+
+  document.querySelectorAll('.close-modal').forEach(btn => btn.addEventListener('click', () => document.getElementById('qaModal').style.display='none'));
+  document.getElementById('qaModal').addEventListener('click', e => { if(e.target===document.getElementById('qaModal')) document.getElementById('qaModal').style.display='none'; });
+
+  document.getElementById('askBtn').addEventListener('click', async () => {
+    const query = document.getElementById('qaQuestion').value.trim();
+    if (!query) return;
+    const btn = document.getElementById('askBtn');
+    btn.disabled=true; btn.textContent='Asking…';
+    try {
+      const res = await fetch(`${API_BASE}/documents/${currentDocId}/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
+      const data = await res.json();
+      const el = document.getElementById('qaAnswer');
+      el.textContent = data.answer || 'No answer found.';
+      el.style.display = 'block';
+    } catch(e) { toast('Error: '+e.message, 'error'); }
+    finally { btn.disabled=false; btn.textContent='Ask'; }
+  });
+
+  loadDocuments();
+</script>
+</body>
+</html>

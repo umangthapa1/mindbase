@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <style>
+    .setting-row { display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--border-subtle); gap:12px; }
+    .setting-row:last-child { border-bottom:none; }
+    .setting-label { font-size:13px; font-weight:300; color:var(--text-secondary); }
+    .setting-desc { font-size:11px; color:var(--text-tertiary); margin-top:2px; }
+    input[type="range"] { -webkit-appearance:none; height:3px; background:var(--border-mid); border-radius:99px; outline:none; cursor:pointer; flex:1; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--accent); border:2px solid var(--bg-void); box-shadow:0 0 0 1px var(--accent-border), 0 2px 6px rgba(109,124,255,0.4); cursor:pointer; transition:transform 120ms var(--ease); }
+    input[type="range"]::-webkit-slider-thumb:hover { transform:scale(1.15); }
+    .range-val { font-size:12px; color:var(--text-tertiary); font-family:var(--mono); min-width:30px; text-align:right; }
+    .about-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border-subtle); font-size:12.5px; }
+    .about-row:last-child { border-bottom:none; }
+    .about-key { color:var(--text-tertiary); font-weight:300; }
+    .about-val { color:var(--text-secondary); font-weight:300; font-family:var(--mono); font-size:12px; }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Settings</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content narrow">
+
+    <!-- Model -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Model</div>
+      <div class="setting-row">
+        <div><div class="setting-label">Default model</div></div>
+        <select id="defaultModel" style="width:auto;min-width:160px"></select>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Temperature</div><div class="setting-desc">Higher = more creative</div></div>
+        <div style="display:flex;align-items:center;gap:10px;flex:1;max-width:200px;margin-left:16px">
+          <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+          <span class="range-val" id="tempVal">0.7</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Max tokens</div></div>
+        <input id="maxTokens" type="number" value="2048" min="100" max="10000" style="width:100px">
+      </div>
+    </div>
+
+    <!-- Memory -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Memory</div>
+      <div class="setting-row">
+        <div class="setting-label">Auto-extract from chat</div>
+        <input id="autoMemory" type="checkbox" checked>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Include in context</div>
+        <input id="includeMemory" type="checkbox" checked>
+      </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-danger btn-full" id="clearMemoriesBtn">Clear all memories</button>
+      </div>
+    </div>
+
+    <!-- Data -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Data &amp; privacy</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-ghost btn-full" id="exportBtn" style="justify-content:flex-start">Export all data</button>
+        <button class="btn btn-ghost btn-full" id="backupBtn" style="justify-content:flex-start">Backup database</button>
+        <button class="btn btn-danger btn-full" id="deleteAllBtn" style="justify-content:flex-start">Delete all data</button>
+      </div>
+      <div style="margin-top:12px;font-size:11px;color:var(--text-tertiary);font-weight:300">All data is stored locally. Nothing leaves your device.</div>
+    </div>
+
+    <!-- About -->
+    <div class="card">
+      <div class="card-title">About</div>
+      <div class="about-row"><span class="about-key">Product</span><span class="about-val">Mindbase</span></div>
+      <div class="about-row"><span class="about-key">Version</span><span class="about-val">1.0.0</span></div>
+      <div class="about-row"><span class="about-key">Backend</span><span class="about-val">FastAPI + SQLAlchemy</span></div>
+      <div class="about-row"><span class="about-key">AI</span><span class="about-val">Ollama (local)</span></div>
+      <div class="about-row"><span class="about-key">Vector DB</span><span class="about-val">ChromaDB</span></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="../js/toast.js"></script>
+<script>
+  const API_BASE = '/api';
+
+  async function loadModels() {
+    try {
+      const res = await fetch(`${API_BASE}/ollama/models`);
+      const data = await res.json();
+      const sel = document.getElementById('defaultModel');
+      if (data.models) {
+        data.models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.name; opt.textContent = m.name.split(':')[0];
+          sel.appendChild(opt);
+        });
+      }
+      const saved = localStorage.getItem('defaultModel');
+      if (saved) sel.value = saved;
+    } catch(e) {}
+  }
+
+  function loadPrefs() {
+    document.getElementById('temperature').value = localStorage.getItem('temperature') || '0.7';
+    document.getElementById('tempVal').textContent = localStorage.getItem('temperature') || '0.7';
+    document.getElementById('maxTokens').value = localStorage.getItem('maxTokens') || '2048';
+    document.getElementById('autoMemory').checked = JSON.parse(localStorage.getItem('autoMemory') ?? 'true');
+    document.getElementById('includeMemory').checked = JSON.parse(localStorage.getItem('includeMemory') ?? 'true');
+  }
+
+  function savePrefs() {
+    localStorage.setItem('defaultModel', document.getElementById('defaultModel').value);
+    localStorage.setItem('temperature', document.getElementById('temperature').value);
+    localStorage.setItem('maxTokens', document.getElementById('maxTokens').value);
+    localStorage.setItem('autoMemory', document.getElementById('autoMemory').checked);
+    localStorage.setItem('includeMemory', document.getElementById('includeMemory').checked);
+  }
+
+  document.getElementById('temperature').addEventListener('input', e => {
+    document.getElementById('tempVal').textContent = parseFloat(e.target.value).toFixed(1);
+    savePrefs();
+  });
+
+  ['defaultModel','maxTokens','autoMemory','includeMemory'].forEach(id =>
+    document.getElementById(id).addEventListener('change', savePrefs));
+
+  document.getElementById('exportBtn').addEventListener('click', async () => {
+    const data = {
+      conversations: await fetch(`${API_BASE}/chat/conversations`).then(r=>r.json()),
+      notes: await fetch(`${API_BASE}/notes`).then(r=>r.json()),
+      tasks: await fetch(`${API_BASE}/tasks`).then(r=>r.json()),
+      memories: await fetch(`${API_BASE}/memory/list`).then(r=>r.json()),
+      exportedAt: new Date().toISOString()
+    };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+    a.download = `mindbase-export-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+  });
+
+  document.getElementById('backupBtn').addEventListener('click', () => toast('Database backup: the SQLite file is at data/workspace.db', 'info', 6000));
+
+  document.getElementById('clearMemoriesBtn').addEventListener('click', async () => {
+    if (!await confirmDialog('Clear all memories? This cannot be undone.', { confirmText: 'Clear all' })) return;
+    try {
+      const memories = await fetch(`${API_BASE}/memory/list`).then(r=>r.json());
+      await Promise.all(memories.memories.map(m => fetch(`${API_BASE}/memory/${m.id}`,{method:'DELETE'})));
+      toast('All memories cleared.', 'ok');
+    } catch(e) { toast('Error: '+e.message, 'error'); }
+  });
+
+  document.getElementById('deleteAllBtn').addEventListener('click', async () => {
+    if (!await confirmDialog('Delete ALL data? This is permanent.', { confirmText: 'Delete all' })) return;
+    if (!await confirmDialog('This deletes all conversations, notes, tasks, and memories from both the app and the backend. Continue?', { confirmText: 'Yes, delete everything' })) return;
+    try {
+      // Also call a backend reset endpoint if available
+      await fetch(`${API_BASE}/reset`, {method:'POST'}).catch(()=>{});
+    } catch(e) {}
+    localStorage.clear();
+    window.location.href = '/';
+  });
+
+  loadModels();
+  loadPrefs();
+</script>
+</body>
+</html>

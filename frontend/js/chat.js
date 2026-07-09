@@ -1,0 +1,419 @@
+const MAX_MESSAGE_LENGTH = 10000;
+
+class ChatManager {
+    constructor() {
+        this.currentConversationId = null;
+        this.conversations = [];
+        this.isLoading = false;
+    }
+
+    async initialize() {
+        await this.loadConversations();
+        await this.loadModels();
+        this.updateAgentBadge();
+    }
+
+    /* ── Agent badge (single source of truth for the active agent) ── */
+    updateAgentBadge() {
+        const badge = $('#agentBadge');
+        if (!badge) return;
+
+        let agent = null;
+        try {
+            agent = JSON.parse(localStorage.getItem('selectedAgent') || 'null');
+        } catch { agent = null; }
+
+        if (agent?.name) {
+            badge.innerHTML = '';
+            const label = document.createElement('span');
+            label.textContent = agent.name;
+            badge.appendChild(label);
+
+            const clear = document.createElement('button');
+            clear.className = 'agent-clear';
+            clear.title = 'Clear active agent — use default';
+            clear.setAttribute('aria-label', `Clear agent ${agent.name} and use default`);
+            clear.innerHTML = `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg>`;
+            clear.addEventListener('click', () => this.clearAgent());
+            badge.appendChild(clear);
+
+            badge.classList.add('visible');
+        } else {
+            badge.innerHTML = '';
+            badge.classList.remove('visible');
+        }
+    }
+
+    clearAgent() {
+        localStorage.removeItem('selectedAgent');
+        this.updateAgentBadge();
+        toast('Using default model', 'info');
+    }
+
+    /* ── Models ── */
+    async loadModels() {
+        try {
+            const data = await API.getModels();
+            const sel = $('#modelSelector');
+            sel.innerHTML = '<option value="">Default model</option>';
+            if (data.models?.length) {
+                data.models.forEach(model => {
+                    const opt = document.createElement('option');
+                    opt.value = model.name;
+                    opt.textContent = model.name.split(':')[0];
+                    sel.appendChild(opt);
+                });
+            }
+        } catch (err) {
+            console.error('Failed to load models:', err);
+        }
+    }
+
+    /* ── Conversations list ── */
+    async loadConversations() {
+        // FIX 13: Show loading skeleton while fetching
+        const list = $('#conversationsList');
+        list.setAttribute('aria-busy', 'true');
+        list.innerHTML = `
+            <div class="conv-skeleton"></div>
+            <div class="conv-skeleton"></div>
+            <div class="conv-skeleton"></div>
+        `;
+        try {
+            this.conversations = await API.listConversations();
+            this.renderConversations();
+        } catch (err) {
+            console.error('Failed to load conversations:', err);
+            list.innerHTML = '<p class="conv-empty">Failed to load</p>';
+            toast('Could not load conversations.', 'error');
+        } finally {
+            list.setAttribute('aria-busy', 'false');
+        }
+    }
+
+    renderConversations() {
+        const list = $('#conversationsList');
+        list.innerHTML = '';
+
+        if (!this.conversations.length) {
+            const empty = document.createElement('p');
+            empty.className = 'conv-empty';
+            empty.textContent = 'No conversations yet';
+            list.appendChild(empty);
+            return;
+        }
+
+        this.conversations.forEach(conv => {
+            const el = document.createElement('div');
+            el.className = 'conv-item' + (conv.id === this.currentConversationId ? ' active' : '');
+            el.title = conv.title;
+            el.textContent = truncate(conv.title, 38);
+
+            el.addEventListener('click', () => this.selectConversation(conv.id));
+
+            // FIX 3: Replace blocking confirm() with inline delete button
+            el.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                this._showDeleteConfirm(conv.id, el);
+            });
+
+            list.appendChild(el);
+        });
+    }
+
+    // FIX 3: Non-blocking inline delete confirmation
+    _showDeleteConfirm(id, el) {
+        // Remove any existing confirm UI
+        document.querySelectorAll('.conv-delete-confirm').forEach(e => e.remove());
+
+        const confirm = document.createElement('div');
+        confirm.className = 'conv-delete-confirm';
+        confirm.innerHTML = `
+            <span>Delete?</span>
+            <button class="btn-confirm-yes">Yes</button>
+            <button class="btn-confirm-no">No</button>
+        `;
+
+        confirm.querySelector('.btn-confirm-yes').addEventListener('click', (e) => {
+            e.stopPropagation();
+            confirm.remove();
+            this.deleteConversation(id);
+        });
+
+        confirm.querySelector('.btn-confirm-no').addEventListener('click', (e) => {
+            e.stopPropagation();
+            confirm.remove();
+        });
+
+        el.appendChild(confirm);
+    }
+
+    /* ── Select / load conversation ── */
+    async selectConversation(id) {
+        this.currentConversationId = id;
+        this.renderConversations();
+        try {
+            const conv = await API.getConversation(id);
+            this.displayConversation(conv);
+            $('#pageTitle').textContent = conv.title || 'Conversation';
+        } catch (err) {
+            console.error('Failed to load conversation:', err);
+        }
+    }
+
+    displayConversation(conversation) {
+        this.clearMessages();
+        conversation.messages.forEach(msg => this.appendMessage(msg.role, msg.content));
+        this.scrollBottom();
+    }
+
+    /* ── Create / delete ── */
+    async createConversation() {
+        try {
+            const conv = await API.createConversation();
+            this.conversations.unshift(conv);
+            this.renderConversations();
+            this.currentConversationId = conv.id;
+            this.clearMessages(true);
+            $('#pageTitle').textContent = 'New conversation';
+        } catch (err) {
+            console.error('Failed to create conversation:', err);
+        }
+    }
+
+    async deleteConversation(id) {
+        try {
+            await API.deleteConversation(id);
+            this.conversations = this.conversations.filter(c => c.id !== id);
+            if (this.currentConversationId === id) {
+                this.currentConversationId = null;
+                this.clearMessages(true);
+                $('#pageTitle').textContent = 'New conversation';
+            }
+            this.renderConversations();
+        } catch (err) {
+            console.error('Failed to delete conversation:', err);
+        }
+    }
+
+    /* ── DOM helpers ── */
+    clearMessages(showWelcome = false) {
+        const inner = $('#messagesInner');
+        inner.innerHTML = `
+            <div class="typing-indicator" id="typingIndicator" aria-label="Assistant is typing">
+                <div class="msg-avatar" aria-hidden="true">AI</div>
+                <div class="typing-dots" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        `;
+
+        if (showWelcome) {
+            const welcome = document.createElement('div');
+            welcome.className = 'welcome';
+            welcome.id = 'welcomeState';
+            welcome.innerHTML = `
+                <div class="welcome-logo" aria-hidden="true">
+                    <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2"  y="2"  width="7" height="7" rx="2" fill="rgba(255,255,255,0.70)"/>
+                        <rect x="11" y="2"  width="7" height="7" rx="2" fill="rgba(255,255,255,0.35)"/>
+                        <rect x="2"  y="11" width="7" height="7" rx="2" fill="rgba(255,255,255,0.35)"/>
+                        <rect x="11" y="11" width="7" height="7" rx="2" fill="rgba(255,255,255,0.18)"/>
+                    </svg>
+                </div>
+                <h2>Mindbase</h2>
+                <p>Your AI workspace. Start a conversation below.</p>
+            `;
+            inner.insertBefore(welcome, inner.firstChild);
+        }
+    }
+
+    // FIX 7: Merged appendMessage + appendStreamingMessage into one function
+    // streaming=true returns the bubble div for live updates; streaming=false returns the message el
+    appendMessage(role, content, streaming = false) {
+        // Remove welcome state on first real message
+        const welcome = $('#welcomeState');
+        if (welcome) welcome.remove();
+
+        const inner = $('#messagesInner');
+        const typing = $('#typingIndicator');
+
+        const el = document.createElement('div');
+        el.className = `message ${role}`;
+
+        const avatarLabel = role === 'user' ? 'You' : 'AI';
+        let bubbleHTML = '';
+        if (!streaming) {
+            bubbleHTML = role === 'assistant'
+                ? renderMarkdown(content)
+                : `<p>${escapeHTML(content)}</p>`;
+        }
+
+        el.innerHTML = `
+            <div class="msg-avatar" aria-hidden="true">${avatarLabel}</div>
+            <div class="msg-content">
+                <div class="msg-bubble">${bubbleHTML}</div>
+            </div>
+        `;
+
+        // Syntax highlight code blocks for non-streaming messages
+        if (!streaming) {
+            el.querySelectorAll('pre code').forEach(block => {
+                try { hljs.highlightElement(block); } catch {}
+            });
+        }
+
+        // Insert before typing indicator
+        inner.insertBefore(el, typing);
+
+        return streaming ? el.querySelector('.msg-bubble') : el;
+    }
+
+    scrollBottom(behavior = 'auto') {
+        const container = $('#messagesContainer');
+        if (!container) return;
+
+        requestAnimationFrame(() => {
+            if (behavior === 'smooth' && typeof container.scrollTo === 'function') {
+                container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+            } else {
+                container.scrollTop = container.scrollHeight;
+            }
+        });
+    }
+
+    /* ── Typing indicator ── */
+    setTyping(visible) {
+        const t = $('#typingIndicator');
+        if (t) t.classList.toggle('visible', visible);
+        if (visible) this.scrollBottom();
+    }
+
+    /* ── Send button state ── */
+    setSendLoading(loading) {
+        const btn = $('#sendBtn');
+        if (!btn) return;
+        btn.disabled = loading;
+        btn.classList.toggle('loading', loading);
+    }
+
+    /* ── Send message ── */
+    async sendMessage() {
+        const input = $('#messageInput');
+        const message = input.value.trim();
+        if (!message || this.isLoading) return;
+
+        // FIX 4: Enforce max message length
+        if (message.length > MAX_MESSAGE_LENGTH) {
+            toast(`Message is too long — keep it under ${MAX_MESSAGE_LENGTH.toLocaleString()} characters.`, 'error');
+            return;
+        }
+
+        if (!this.currentConversationId) {
+            toast('Create or select a conversation first.', 'info');
+            return;
+        }
+
+        input.value = '';
+        // FIX 10: Reset auto-resize height
+        input.style.height = 'auto';
+        this.isLoading = true;
+        this.setTyping(true);
+        this.setSendLoading(true);
+
+        // Append user message immediately
+        this.appendMessage('user', message);
+        this.scrollBottom();
+
+        try {
+            const selectedModel = $('#modelSelector').value;
+            let streamBubble = null;
+            let assistantContent = '';
+            let contextHint = null;
+            let firstChunk = true;
+
+            for await (const data of API.streamMessage(
+                this.currentConversationId,
+                message,
+                selectedModel || null
+            )) {
+                // Handle meta / action info
+                if (data.meta) {
+                    const parts = [];
+                    if (data.meta.intent) parts.push(data.meta.intent);
+                    if (data.meta.context?.length) parts.push(data.meta.context.join(', '));
+                    if (parts.length) contextHint = parts.join(' · ');
+                    if (data.meta.actions?.length) {
+                        const actionNote = data.meta.actions
+                            .filter(a => a.success)
+                            .map(a => a.message.replace(/\*\*/g, ''))
+                            .join(' · ');
+                        if (actionNote) contextHint = (contextHint ? contextHint + ' · ' : '') + actionNote;
+                    }
+                }
+
+                if (data.chunk) {
+                    if (firstChunk) {
+                        this.setTyping(false);
+                        // FIX 7: Use merged appendMessage with streaming=true
+                        streamBubble = this.appendMessage('assistant', '', true);
+                        firstChunk = false;
+                    }
+                    assistantContent += data.chunk;
+                    streamBubble.innerHTML = renderMarkdown(assistantContent);
+                    this.scrollBottom();
+                }
+            }
+
+            // Highlight code in final streamed message
+            if (streamBubble) {
+                streamBubble.querySelectorAll('pre code').forEach(block => {
+                    try { hljs.highlightElement(block); } catch {}
+                });
+
+                if (contextHint) {
+                    const hint = document.createElement('p');
+                    hint.style.cssText = 'font-size:11px;color:var(--text-tertiary);margin-top:6px;';
+                    hint.textContent = contextHint;
+                    streamBubble.appendChild(hint);
+                }
+            }
+
+            // FIX 8: Update conversation title locally instead of reloading all conversations
+            if (assistantContent) {
+                const conv = this.conversations.find(c => c.id === this.currentConversationId);
+                if (conv && (conv.title === 'New Conversation' || conv.title === 'New conversation')) {
+                    try {
+                        const updated = await API.getConversation(this.currentConversationId);
+                        conv.title = updated.title;
+                        this.renderConversations();
+                        $('#pageTitle').textContent = updated.title || 'Conversation';
+                    } catch {
+                        // Non-critical — title just won't update in sidebar
+                    }
+                }
+            }
+
+        } catch (err) {
+            // FIX 9: Don't leak raw error details to the user
+            console.error('Failed to send message:', err);
+            this.appendMessage('assistant', 'Something went wrong. Please try again.');
+        } finally {
+            this.isLoading = false;
+            this.setTyping(false);
+            this.setSendLoading(false);
+            input.focus();
+        }
+    }
+}
+
+/* ── Small utility not in utils.js ── */
+function escapeHTML(str) {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+const chatManager = new ChatManager();

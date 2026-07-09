@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Memory</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content narrow">
+
+    <!-- Create -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-title">Create memory</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label class="field-label">Type</label>
+          <select id="memoryType">
+            <option value="user">User profile</option>
+            <option value="project">Project</option>
+            <option value="feedback">Feedback</option>
+            <option value="reference">Reference</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Content</label>
+          <textarea id="memoryContent" placeholder="Write something to remember…" style="height:72px"></textarea>
+        </div>
+        <div>
+          <label class="field-label">Tags (comma-separated)</label>
+          <input id="memoryTags" type="text" placeholder="work, important">
+        </div>
+        <button class="btn btn-primary btn-full" id="createMemoryBtn">Create memory</button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-title">Search</div>
+      <div class="search-row">
+        <input id="searchQuery" type="text" placeholder="Search memories…">
+        <select id="filterType" style="width:auto;flex-shrink:0">
+          <option value="">All types</option>
+          <option value="user">User</option>
+          <option value="project">Project</option>
+          <option value="feedback">Feedback</option>
+          <option value="reference">Reference</option>
+        </select>
+        <button class="btn btn-ghost" id="searchBtn" style="flex-shrink:0">Search</button>
+      </div>
+    </div>
+
+    <!-- List -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div class="section-label" style="margin-bottom:0">Memories</div>
+      <span id="memoryCount" style="font-size:11px;color:var(--text-tertiary)">Loading…</span>
+    </div>
+    <div id="memoriesList"><div class="empty-state">Loading memories…</div></div>
+
+  </div>
+</div>
+
+<script src="../js/toast.js"></script>
+<script>
+  const API_BASE = '/api';
+
+  async function loadMemories() {
+    try {
+      const res = await fetch(`${API_BASE}/memory/list`);
+      const data = await res.json();
+      displayMemories(data.memories || []);
+      document.getElementById('memoryCount').textContent = `${data.count || 0} memories`;
+    } catch(e) { document.getElementById('memoriesList').innerHTML = '<div class="empty-state">Error loading memories.</div>'; }
+  }
+
+  function displayMemories(memories) {
+    const list = document.getElementById('memoriesList');
+    if (!memories.length) { list.innerHTML = '<div class="empty-state">No memories yet.</div>'; return; }
+    list.innerHTML = '';
+    memories.forEach(mem => {
+      const el = document.createElement('div');
+      el.className = 'list-item';
+      el.style.cssText = 'flex-direction:column;align-items:stretch;gap:8px;margin-bottom:8px';
+      const tags = (mem.tags||[]).map(t => `<span class="badge">${t}</span>`).join('');
+      const relevance = mem.relevance ? `<span class="badge" style="color:var(--text-secondary)">${Math.round(mem.relevance*100)}% match</span>` : '';
+      el.innerHTML = `
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <span class="badge">${mem.type}</span>${tags}${relevance}
+          </div>
+          <button class="icon-x" aria-label="Delete memory" title="Delete memory" style="flex-shrink:0;color:var(--text-secondary)" data-del="${mem.id}"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>
+        </div>
+        <div style="font-size:13px;font-weight:300;color:var(--text-primary);line-height:1.6;word-break:break-word">${mem.content}</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${new Date(mem.created_at).toLocaleDateString()}</div>`;
+      el.querySelector('[data-del]').addEventListener('click', async () => {
+        if (!await confirmDialog('Delete this memory?')) return;
+        await fetch(`${API_BASE}/memory/${mem.id}`, {method:'DELETE'});
+        loadMemories();
+        toast('Memory deleted', 'info');
+      });
+      list.appendChild(el);
+    });
+  }
+
+  document.getElementById('createMemoryBtn').addEventListener('click', async () => {
+    const content = document.getElementById('memoryContent').value.trim();
+    if (!content) { toast('Enter memory content.', 'error'); return; }
+    const type = document.getElementById('memoryType').value;
+    const tags = document.getElementById('memoryTags').value.split(',').map(t=>t.trim()).filter(Boolean);
+    const btn = document.getElementById('createMemoryBtn');
+    btn.disabled=true; btn.textContent='Saving…';
+    try {
+      const res = await fetch(`${API_BASE}/memory/create`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content,type,tags})});
+      if(res.ok) { document.getElementById('memoryContent').value=''; document.getElementById('memoryTags').value=''; loadMemories(); toast('Memory saved', 'ok'); }
+      else { toast('Error creating memory', 'error'); }
+    } catch(e) { toast('Error: '+e.message, 'error'); }
+    finally { btn.disabled=false; btn.textContent='Create memory'; }
+  });
+
+  document.getElementById('searchBtn').addEventListener('click', async () => {
+    const query = document.getElementById('searchQuery').value.trim();
+    const type = document.getElementById('filterType').value;
+    if (!query) { loadMemories(); return; }
+    try {
+      const res = await fetch(`${API_BASE}/memory/search`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query, type:type||undefined})});
+      const data = await res.json();
+      displayMemories(data.memories || []);
+      document.getElementById('memoryCount').textContent = `${data.count || 0} results`;
+    } catch(e) { toast('Error: '+e.message, 'error'); }
+  });
+
+  loadMemories();
+</script>
+</body>
+</html>

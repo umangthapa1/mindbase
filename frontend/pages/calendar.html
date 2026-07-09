@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calendar — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <style>
+    .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+    .cal-day-name { font-size:10px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-tertiary); text-align:center; padding:6px 0; }
+    .cal-cell { min-height:68px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:6px 7px; cursor:pointer; transition:border-color 150ms ease; position:relative; }
+    .cal-cell:hover { border-color:var(--border-mid); }
+    .cal-cell.today { border-color:var(--border-strong); }
+    .cal-cell.selected { border-color:rgba(255,255,255,0.28); background:var(--bg-elevated); }
+    .cal-num { font-size:12px; font-weight:400; color:var(--text-secondary); margin-bottom:4px; }
+    .cal-cell.today .cal-num { color:var(--text-primary); font-weight:500; }
+    .cal-dot { display:inline-block; width:5px; height:5px; border-radius:50%; }
+    .day-item { background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:7px; padding:10px 12px; margin-bottom:6px; }
+    .day-item-title { font-size:12.5px; font-weight:400; color:var(--text-primary); margin-bottom:3px; }
+    .day-item-meta { font-size:11px; color:var(--text-tertiary); }
+    .cal-layout { display:grid; grid-template-columns:1fr 300px; gap:24px; align-items:start; }
+    /* ── Mobile: stack the event panel under the month grid, shrink cells ── */
+    @media (max-width:768px) {
+      .cal-layout { grid-template-columns:1fr; gap:16px; }
+      .cal-cell { min-height:46px; padding:4px 5px; }
+      .cal-num { font-size:11px; margin-bottom:2px; }
+      .cal-day-name { font-size:9px; padding:4px 0; }
+      .cal-grid { gap:2px; }
+    }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Calendar</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content wide">
+    <div class="cal-layout">
+
+      <!-- Calendar -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <button class="btn btn-ghost" id="prevMonth" style="padding:6px 10px;font-size:16px;line-height:1">‹</button>
+          <span id="monthLabel" style="font-size:13px;font-weight:500;color:var(--text-primary)"></span>
+          <button class="btn btn-ghost" id="nextMonth" style="padding:6px 10px;font-size:16px;line-height:1">›</button>
+        </div>
+        <div class="cal-grid" style="margin-bottom:6px">
+          <div class="cal-day-name">Sun</div><div class="cal-day-name">Mon</div><div class="cal-day-name">Tue</div>
+          <div class="cal-day-name">Wed</div><div class="cal-day-name">Thu</div><div class="cal-day-name">Fri</div>
+          <div class="cal-day-name">Sat</div>
+        </div>
+        <div class="cal-grid" id="calendarGrid"></div>
+      </div>
+
+      <!-- Side panel -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <!-- Add event -->
+        <div class="card">
+          <div class="card-title">New event</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input id="eventTitle" type="text" placeholder="Title">
+            <div><label class="field-label">Start</label><input id="eventStart" type="datetime-local"></div>
+            <div><label class="field-label">End</label><input id="eventEnd" type="datetime-local"></div>
+            <input id="eventLocation" type="text" placeholder="Location (optional)">
+            <button class="btn btn-primary btn-full" id="createEventBtn">Add event</button>
+          </div>
+        </div>
+
+        <!-- Day detail -->
+        <div class="card">
+          <div class="card-title" id="selectedDayLabel">Select a day</div>
+          <div id="dayDetail" style="font-size:12px;color:var(--text-tertiary)">Click a date to see tasks and events.</div>
+        </div>
+
+        <!-- Hint -->
+        <div class="card" style="background:transparent;border-color:var(--border-subtle)">
+          <div class="field-label" style="margin-bottom:8px">Try in chat</div>
+          <div style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--text-tertiary)">
+            <code>add event: Team lunch Friday noon</code>
+            <code>what's on my calendar this week?</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/toast.js"></script>
+<script>
+  const API = '/api';
+  let viewYear, viewMonth, allItems = [], selectedDate = null;
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  async function loadMonth() {
+    try {
+      const start = new Date(viewYear, viewMonth, 1).toISOString();
+      const end = new Date(viewYear, viewMonth+1, 0, 23, 59, 59).toISOString();
+      const res = await fetch(`${API}/calendar?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+      const data = await res.json();
+      allItems = data.items || [];
+    } catch(e) { allItems = []; }
+    renderGrid();
+    if (selectedDate) showDay(selectedDate);
+  }
+
+  function itemsOnDay(y, m, d) {
+    const s = new Date(y,m,d), e = new Date(y,m,d,23,59,59);
+    return allItems.filter(it => { const dt = new Date(it.start); return dt >= s && dt <= e; });
+  }
+
+  function renderGrid() {
+    document.getElementById('monthLabel').textContent = new Date(viewYear, viewMonth).toLocaleString('default', { month:'long', year:'numeric' });
+    const grid = document.getElementById('calendarGrid');
+    grid.innerHTML = '';
+    const first = new Date(viewYear, viewMonth, 1);
+    const lastDate = new Date(viewYear, viewMonth+1, 0).getDate();
+    const today = new Date();
+    for (let i = 0; i < first.getDay(); i++) grid.appendChild(document.createElement('div'));
+    for (let d = 1; d <= lastDate; d++) {
+      const cell = document.createElement('div');
+      cell.className = 'cal-cell';
+      const isToday = today.getFullYear()===viewYear && today.getMonth()===viewMonth && today.getDate()===d;
+      const isSel = selectedDate && selectedDate.y===viewYear && selectedDate.m===viewMonth && selectedDate.d===d;
+      if (isToday) cell.classList.add('today');
+      if (isSel) cell.classList.add('selected');
+      const items = itemsOnDay(viewYear, viewMonth, d);
+      const dotColors = ['rgba(167,139,250,0.8)','rgba(251,191,36,0.8)','rgba(74,222,128,0.8)'];
+      const dots = items.slice(0,3).map((it,i) => `<span class="cal-dot" style="background:${it.type==='task'?dotColors[1]:dotColors[0]}"></span>`).join('');
+      cell.innerHTML = `<div class="cal-num">${d}</div><div style="display:flex;gap:3px;flex-wrap:wrap">${dots}</div>${items.length>3?`<div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">+${items.length-3}</div>`:''}`;
+      cell.addEventListener('click', () => { selectedDate = {y:viewYear,m:viewMonth,d}; renderGrid(); showDay(selectedDate); });
+      grid.appendChild(cell);
+    }
+  }
+
+  function showDay({y,m,d}) {
+    const label = new Date(y,m,d).toLocaleDateString(undefined, {weekday:'long',month:'long',day:'numeric'});
+    document.getElementById('selectedDayLabel').textContent = label;
+    const items = itemsOnDay(y,m,d);
+    const el = document.getElementById('dayDetail');
+    if (!items.length) { el.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px">Nothing scheduled.</div>'; return; }
+    el.innerHTML = items.map(it => {
+      const time = new Date(it.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      const type = it.type==='task' ? `<span style="color:rgba(251,191,36,0.8)">task</span>` : `<span style="color:rgba(167,139,250,0.8)">event</span>`;
+      const del = it.type==='event' ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:11px" data-del="${it.id}">Delete</button>` : '';
+      return `<div class="day-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div class="day-item-title">${it.title}</div><div class="day-item-meta">${type} · ${time}</div></div>${del}</div></div>`;
+    }).join('');
+    el.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!await confirmDialog('Delete this event?')) return;
+        await fetch(`${API}/calendar/events/${btn.dataset.del}`, {method:'DELETE'});
+        loadMonth();
+        toast('Event deleted', 'info');
+      });
+    });
+  }
+
+  document.getElementById('prevMonth').addEventListener('click', () => { viewMonth--; if(viewMonth<0){viewMonth=11;viewYear--;} loadMonth(); });
+  document.getElementById('nextMonth').addEventListener('click', () => { viewMonth++; if(viewMonth>11){viewMonth=0;viewYear++;} loadMonth(); });
+
+  document.getElementById('createEventBtn').addEventListener('click', async () => {
+    const title = document.getElementById('eventTitle').value.trim();
+    const start = document.getElementById('eventStart').value;
+    const end = document.getElementById('eventEnd').value;
+    if (!title || !start) { toast('Title and start time are required.', 'error'); return; }
+    if (end && new Date(end) < new Date(start)) { toast('End time must be after the start time.', 'error'); return; }
+    const btn = document.getElementById('createEventBtn');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+      await fetch(`${API}/calendar/events`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title, start: new Date(start).toISOString(), end: end ? new Date(end).toISOString() : undefined, location: document.getElementById('eventLocation').value }) });
+      document.getElementById('eventTitle').value = '';
+      loadMonth();
+      toast('Event added', 'ok');
+    } catch(e) { toast('Error creating event', 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Add event'; }
+  });
+
+  const now = new Date();
+  viewYear = now.getFullYear(); viewMonth = now.getMonth();
+  selectedDate = { y: viewYear, m: viewMonth, d: now.getDate() };
+  loadMonth();
+</script>
+</body>
+</html>

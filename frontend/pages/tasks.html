@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tasks — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <style>
+    .task-item { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:14px 16px; display:flex; align-items:flex-start; gap:12px; transition:border-color 150ms ease; }
+    .task-item:hover { border-color:var(--border-mid); }
+    .task-item.completed { opacity:0.5; }
+    input[type="checkbox"] { width:15px; height:15px; margin-top:1px; flex-shrink:0; accent-color:rgba(255,255,255,0.7); cursor:pointer; }
+    .priority-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; margin-top:5px; }
+    .overdue-tag { font-size:10px; color:rgba(248,113,113,0.9); font-weight:400; letter-spacing:0.03em; }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Tasks</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content narrow">
+
+    <!-- Create -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-title">New task</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <input id="taskTitle" type="text" placeholder="Task title…">
+        <textarea id="taskDesc" placeholder="Description…" style="height:64px"></textarea>
+        <div class="grid-3">
+          <div>
+            <label class="field-label">Priority</label>
+            <select id="taskPriority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Status</label>
+            <select id="taskStatus">
+              <option value="pending" selected>Pending</option>
+              <option value="in_progress">In progress</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Due date</label>
+            <input id="taskDueDate" type="date">
+          </div>
+        </div>
+        <input id="taskTags" type="text" placeholder="Tags (comma-separated)…">
+        <button class="btn btn-primary btn-full" id="createTaskBtn">Create task</button>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-primary filter-btn" data-filter="all">All</button>
+      <button class="btn btn-ghost filter-btn" data-filter="pending">Pending</button>
+      <button class="btn btn-ghost filter-btn" data-filter="in_progress">In progress</button>
+      <button class="btn btn-ghost filter-btn" data-filter="completed">Completed</button>
+    </div>
+
+    <!-- List -->
+    <div id="tasksList" style="display:flex;flex-direction:column;gap:8px">
+      <div class="empty-state">Loading tasks…</div>
+    </div>
+
+  </div>
+</div>
+
+<script src="../js/toast.js"></script>
+<script>
+  const API_BASE = '/api';
+  let allTasks = [], currentFilter = 'all';
+
+  async function loadTasks() {
+    try {
+      const res = await fetch(`${API_BASE}/tasks`);
+      const data = await res.json();
+      allTasks = data.tasks || [];
+      filterTasks(currentFilter);
+    } catch(e) { console.error(e); }
+  }
+
+  function filterTasks(filter) {
+    currentFilter = filter;
+    const filtered = filter === 'all' ? allTasks : allTasks.filter(t => t.status === filter);
+    displayTasks(filtered);
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      const active = btn.dataset.filter === filter;
+      btn.className = `btn ${active ? 'btn-primary' : 'btn-ghost'} filter-btn`;
+    });
+  }
+
+  function displayTasks(tasks) {
+    const list = document.getElementById('tasksList');
+    if (!tasks.length) { list.innerHTML = '<div class="empty-state">No tasks.</div>'; return; }
+    const dot = { low:'rgba(74,222,128,0.7)', medium:'rgba(250,204,21,0.7)', high:'rgba(248,113,113,0.7)' };
+    list.innerHTML = '';
+    tasks.forEach(task => {
+      const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';
+      const dueLabel = task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No due date';
+      const tags = (task.tags||[]).filter(Boolean).map(t => `<span class="badge" style="font-size:10px">${t}</span>`).join('');
+      const el = document.createElement('div');
+      el.className = `task-item${task.status==='completed'?' completed':''}`;
+      el.innerHTML = `
+        <input type="checkbox" class="task-checkbox" ${task.status==='completed'?'checked':''} data-id="${task.id}">
+        <span class="priority-dot" style="background:${dot[task.priority]}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:${task.status==='completed'?'300':'400'};color:var(--text-${task.status==='completed'?'tertiary':'primary'});${task.status==='completed'?'text-decoration:line-through;':''}">${task.title}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span>${dueLabel}</span><span>·</span><span>${task.status.replace('_',' ')}</span>
+            ${isOverdue?'<span class="overdue-tag">overdue</span>':''}
+          </div>
+          ${task.description?`<div style="font-size:12px;color:var(--text-tertiary);font-weight:300;margin-top:4px;line-height:1.5">${task.description}</div>`:''}
+          ${tags?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">${tags}</div>`:''}
+        </div>
+        <button class="icon-x delete-task-btn" aria-label="Delete task" title="Delete task" style="flex-shrink:0;opacity:0;transition:opacity 150ms ease;color:var(--text-secondary)" data-id="${task.id}"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>`;
+
+      el.addEventListener('mouseenter', () => el.querySelector('.delete-task-btn').style.opacity='1');
+      el.addEventListener('mouseleave', () => el.querySelector('.delete-task-btn').style.opacity='0');
+      list.appendChild(el);
+    });
+
+    list.querySelectorAll('.task-checkbox').forEach(cb => {
+      cb.addEventListener('change', async e => {
+        const status = e.target.checked ? 'completed' : 'pending';
+        await fetch(`${API_BASE}/tasks/${e.target.dataset.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status})});
+        loadTasks();
+      });
+    });
+
+    list.querySelectorAll('.delete-task-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!await confirmDialog('Delete this task?')) return;
+        await fetch(`${API_BASE}/tasks/${btn.dataset.id}`, {method:'DELETE'});
+        loadTasks();
+        toast('Task deleted', 'info');
+      });
+    });
+  }
+
+  document.getElementById('createTaskBtn').addEventListener('click', async () => {
+    const title = document.getElementById('taskTitle').value.trim();
+    if (!title) { toast('Enter a task title.', 'error'); return; }
+    const btn = document.getElementById('createTaskBtn');
+    btn.disabled=true; btn.textContent='Creating…';
+    try {
+      await fetch(`${API_BASE}/tasks`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+        title,
+        description: document.getElementById('taskDesc').value,
+        priority: document.getElementById('taskPriority').value,
+        status: document.getElementById('taskStatus').value,
+        due_date: document.getElementById('taskDueDate').value,
+        tags: document.getElementById('taskTags').value.split(',').map(t=>t.trim()).filter(Boolean)
+      })});
+      document.getElementById('taskTitle').value = '';
+      document.getElementById('taskDesc').value = '';
+      document.getElementById('taskTags').value = '';
+      loadTasks();
+      toast('Task created', 'ok');
+    } catch(e) { toast('Error: '+e.message, 'error'); }
+    finally { btn.disabled=false; btn.textContent='Create task'; }
+  });
+
+  document.querySelectorAll('.filter-btn').forEach(btn => btn.addEventListener('click', () => filterTasks(btn.dataset.filter)));
+
+  loadTasks();
+</script>
+</body>
+</html>

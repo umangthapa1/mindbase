@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agents — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <style>
+    .agent-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 150ms ease;
+    }
+    .agent-card:hover { border-color: var(--border-mid); }
+    .agent-icon {
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9px;
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      color: var(--text-primary);
+    }
+    .agent-icon svg { width: 18px; height: 18px; }
+    .agent-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+    .agent-desc { font-size: 12px; font-weight: 300; color: var(--text-secondary); line-height: 1.5; flex:1; }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">AI Agents</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content">
+
+    <!-- Create -->
+    <div class="card" style="margin-bottom:32px">
+      <div class="card-title">New agent</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div><label class="field-label">Name</label><input id="agentName" type="text" placeholder="Agent name…"></div>
+        <div><label class="field-label">System prompt</label><textarea id="agentPrompt" placeholder="You are…" style="height:88px"></textarea></div>
+        <div class="grid-2">
+          <div><label class="field-label">Model</label>
+            <select id="agentModel"><option value="mistral">Mistral</option><option value="llama2">Llama 2</option><option value="neural-chat">Neural Chat</option></select>
+          </div>
+          <div><label class="field-label">Type</label>
+            <select id="agentType"><option value="general">General</option><option value="coding">Coding</option><option value="writing">Writing</option><option value="analysis">Analysis</option><option value="creative">Creative</option></select>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" id="createAgentBtn">Create agent</button>
+      </div>
+    </div>
+
+    <!-- Pre-built -->
+    <div class="section-label" style="margin-bottom:12px">Pre-built agents</div>
+    <div class="grid-3" style="margin-bottom:32px">
+      <div class="agent-card">
+        <div class="agent-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 6 3 10 7 14"/><polyline points="13 6 17 10 13 14"/></svg></div>
+        <div class="agent-name">Code assistant</div>
+        <div class="agent-desc">Helps with programming, debugging, and code reviews.</div>
+        <button class="btn btn-ghost use-agent-btn" data-agent="Coding Expert" data-prompt="You are an expert programmer. Help with code, debugging, and best practices.">Use agent</button>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 3.5l3 3L7 16l-3.5 1 1-3.5z"/><line x1="12" y1="5" x2="15" y2="8"/></svg></div>
+        <div class="agent-name">Writing assistant</div>
+        <div class="agent-desc">Improves grammar, style, and clarity in writing.</div>
+        <button class="btn btn-ghost use-agent-btn" data-agent="Writing Expert" data-prompt="You are an expert writer and editor. Help improve writing clarity, grammar, and style.">Use agent</button>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="17" x2="17" y2="17"/><rect x="4" y="10" width="3" height="5"/><rect x="9" y="6" width="3" height="9"/><rect x="14" y="3" width="3" height="12"/></svg></div>
+        <div class="agent-name">Data analyst</div>
+        <div class="agent-desc">Analyzes data, identifies patterns, and explains insights.</div>
+        <button class="btn btn-ghost use-agent-btn" data-agent="Data Analyst" data-prompt="You are an expert data analyst. Help analyze data, find patterns, and provide insights.">Use agent</button>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><line x1="12.5" y1="12.5" x2="17" y2="17"/></svg></div>
+        <div class="agent-name">Research expert</div>
+        <div class="agent-desc">Conducts deep research and provides comprehensive reports.</div>
+        <button class="btn btn-ghost use-agent-btn" data-agent="Research Expert" data-prompt="You are an expert researcher. Conduct thorough research and provide well-structured reports.">Use agent</button>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5a6 6 0 0 0-3.5 10.9V15a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-1.6A6 6 0 0 0 10 2.5z"/><line x1="8" y1="18" x2="12" y2="18"/></svg></div>
+        <div class="agent-name">Creative genius</div>
+        <div class="agent-desc">Generates creative ideas and helps with brainstorming.</div>
+        <button class="btn btn-ghost use-agent-btn" data-agent="Creative Mind" data-prompt="You are a creative genius. Generate innovative ideas, stories, and creative content.">Use agent</button>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6l8-3 8 3-8 3-8-3z"/><path d="M5 8v4c0 1.3 2.2 2.5 5 2.5s5-1.2 5-2.5V8"/></svg></div>
+        <div class="agent-name">Teacher</div>
+        <div class="agent-desc">Explains concepts clearly and creates learning materials.</div>
+        <button class="btn btn-ghost use-agent-btn" data-agent="Teacher" data-prompt="You are an expert teacher. Explain concepts clearly and help people learn.">Use agent</button>
+      </div>
+    </div>
+
+    <!-- Custom -->
+    <div class="section-label" style="margin-bottom:12px">Your agents</div>
+    <div id="customAgentsList"><div class="empty-state">No custom agents yet.</div></div>
+
+  </div>
+</div>
+
+<script src="../js/toast.js"></script>
+<script>
+  document.querySelectorAll('.use-agent-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      localStorage.setItem('selectedAgent', JSON.stringify({ name: btn.dataset.agent, prompt: btn.dataset.prompt }));
+      window.location.href = '/';
+    });
+  });
+
+  document.getElementById('createAgentBtn').addEventListener('click', () => {
+    const name = document.getElementById('agentName').value.trim();
+    const prompt = document.getElementById('agentPrompt').value.trim();
+    const model = document.getElementById('agentModel').value;
+    const type = document.getElementById('agentType').value;
+    if (!name || !prompt) { toast('Add a name and a system prompt.', 'error'); return; }
+    const agents = JSON.parse(localStorage.getItem('customAgents') || '[]');
+    agents.push({ id: Date.now(), name, prompt, model, type, created: new Date().toISOString() });
+    localStorage.setItem('customAgents', JSON.stringify(agents));
+    document.getElementById('agentName').value = '';
+    document.getElementById('agentPrompt').value = '';
+    loadCustomAgents();
+    toast('Agent created', 'ok');
+  });
+
+  function loadCustomAgents() {
+    const agents = JSON.parse(localStorage.getItem('customAgents') || '[]');
+    const list = document.getElementById('customAgentsList');
+    if (!agents.length) { list.innerHTML = '<div class="empty-state">No custom agents yet.</div>'; return; }
+    list.innerHTML = '';
+    agents.forEach(agent => {
+      const el = document.createElement('div');
+      el.className = 'list-item';
+      el.style.marginBottom = '8px';
+      el.innerHTML = `
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:2px">${escHtml(agent.name)}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">${agent.type} · ${agent.model}</div>
+          <div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(agent.prompt)}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px;align-items:center">
+          <button class="btn btn-ghost" style="padding:6px 12px;font-size:11px" data-use-id="${agent.id}">Use</button>
+          <button class="icon-x" aria-label="Delete agent ${escHtml(agent.name)}" title="Delete agent" data-del-id="${agent.id}"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>
+        </div>`;
+      list.appendChild(el);
+    });
+
+    list.querySelectorAll('[data-del-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.dataset.delId);
+        const updated = JSON.parse(localStorage.getItem('customAgents') || '[]').filter(a => a.id !== id);
+        localStorage.setItem('customAgents', JSON.stringify(updated));
+        loadCustomAgents();
+        toast('Agent removed', 'info');
+      });
+    });
+
+    list.querySelectorAll('[data-use-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.dataset.useId);
+        const agent = JSON.parse(localStorage.getItem('customAgents') || '[]').find(a => a.id === id);
+        if (agent) {
+          localStorage.setItem('selectedAgent', JSON.stringify({ name: agent.name, prompt: agent.prompt }));
+          window.location.href = '/';
+        }
+      });
+    });
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  loadCustomAgents();
+</script>
+</body>
+</html>

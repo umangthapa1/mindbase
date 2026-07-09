@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email — Mindbase</title>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
+  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <style>
+    .email-layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    @media (max-width: 860px) {
+      .email-layout { grid-template-columns: 1fr; }
+      .email-detail-card { display: none; }
+      .email-detail-card.is-active { display: block; }
+      .email-list-card.is-hidden { display: none; }
+    }
+
+    .email-list-card { padding: 0; overflow: hidden; }
+
+    .email-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      cursor: pointer;
+      transition: background 150ms ease;
+    }
+    .email-row:last-child { border-bottom: none; }
+    .email-row:hover { background: var(--bg-hover, rgba(255,255,255,0.03)); }
+    .email-row.is-selected { background: var(--bg-hover, rgba(255,255,255,0.05)); }
+
+    .email-row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .email-sender {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-row.is-unread .email-sender,
+    .email-row.is-unread .email-subject {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .email-row.is-unread .email-sender::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent, #6e8efb);
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    .email-time {
+      font-size: 11px;
+      font-weight: 300;
+      color: var(--text-tertiary);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .email-subject {
+      font-size: 12.5px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-snippet {
+      font-size: 12px;
+      font-weight: 300;
+      color: var(--text-tertiary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-detail-back {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0;
+      margin-bottom: 14px;
+    }
+
+    @media (max-width: 860px) {
+      .email-detail-back { display: flex; }
+    }
+
+    .email-detail-subject {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin: 0 0 10px;
+      line-height: 1.4;
+    }
+
+    .email-detail-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding-bottom: 16px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .email-detail-from { font-size: 12.5px; color: var(--text-secondary); }
+    .email-detail-from span { color: var(--text-tertiary); margin-left: 6px; }
+    .email-detail-date { font-size: 11px; font-weight: 300; color: var(--text-tertiary); white-space: nowrap; }
+
+    /* Plain-text email fallback */
+    .email-detail-body {
+      font-size: 13px;
+      font-weight: 300;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .email-detail-body a { color: var(--accent); text-decoration: underline; word-break: break-all; }
+
+    /* Rich HTML email — rendered in an isolated iframe on a white "paper" surface */
+    .email-html-frame {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      background: #fff;
+      min-height: 140px;
+      display: block;
+      color-scheme: light;
+    }
+
+    /* Toolbar above the body */
+    .email-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+
+    .email-summary {
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--accent-border);
+      background: var(--accent-soft);
+      font-size: 12.5px;
+      font-weight: 300;
+      line-height: 1.65;
+      color: var(--text-primary);
+      animation: summaryIn 0.25s var(--ease) both;
+    }
+    @keyframes summaryIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .email-summary-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Loading shimmer lines while the summary generates */
+    .summary-skeleton { display: flex; flex-direction: column; gap: 7px; }
+    .summary-skeleton span { height: 9px; border-radius: 5px; background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.14), rgba(255,255,255,0.06)); background-size: 200% 100%; animation: summaryShimmer 1.2s linear infinite; }
+    .summary-skeleton span:nth-child(2) { width: 92%; }
+    .summary-skeleton span:nth-child(3) { width: 70%; }
+    @keyframes summaryShimmer { to { background-position: -200% 0; } }
+
+    .email-body-divider { height: 1px; background: var(--border-subtle); margin: 0 0 16px; }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .connection-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #4ade80;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    .connection-text { font-size: 12.5px; color: var(--text-secondary); }
+
+    .mailbox-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .mailbox-tab {
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--border-subtle);
+      background: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .mailbox-tab.is-active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border-color: var(--border-mid);
+    }
+
+    .mailbox-tab-count {
+      margin-left: 6px;
+      color: var(--text-tertiary);
+      font-weight: 300;
+    }
+
+    .email-empty-pane {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 60px 20px;
+      text-align: center;
+      color: var(--text-tertiary);
+    }
+    .email-empty-pane svg { width: 36px; height: 36px; opacity: 0.4; }
+    .email-empty-pane p { margin: 0; font-size: 12.5px; }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260623"></script>
+<div class="page-root">
+
+  <header class="page-header">
+    <span class="page-title">Email</span>
+    <a href="/" class="back-link">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      Chat
+    </a>
+  </header>
+
+  <div class="page-content">
+
+    <!-- Connection / sync -->
+    <div class="card" style="margin-bottom:24px">
+      <div class="connection-status" id="connectionStatus">
+        <span class="connection-text">Checking Gmail connection…</span>
+      </div>
+    </div>
+
+    <!-- Mailbox tabs -->
+    <div class="mailbox-tabs">
+      <button class="mailbox-tab is-active" data-filter="all">Inbox</button>
+      <button class="mailbox-tab" data-filter="unread">
+        Unread<span class="mailbox-tab-count" id="unreadCount">0</span>
+      </button>
+    </div>
+
+    <!-- List + detail -->
+    <div class="email-layout">
+
+      <div class="card email-list-card" id="emailListCard">
+        <div id="emailList"></div>
+      </div>
+
+      <div class="card email-detail-card" id="emailDetailCard">
+        <div class="email-empty-pane">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2.5" y="4" width="15" height="12" rx="1.5"/>
+            <path d="M3 5.5l6.3 5a1.2 1.2 0 0 0 1.4 0L17 5.5"/>
+          </svg>
+          <p>Select an email to read it</p>
+        </div>
+      </div>
+
+    </div><!-- /email-layout -->
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+<script src="../js/toast.js"></script>
+<script>
+  const API_BASE = '/api/email';
+
+  let state = {
+    connected: false,
+    email: null,
+    filter: 'all', // 'all' | 'unread'
+    emails: [],
+    selectedId: null,
+  };
+
+  const els = {
+    connectionStatus: document.getElementById('connectionStatus'),
+    emailList: document.getElementById('emailList'),
+    emailListCard: document.getElementById('emailListCard'),
+    emailDetailCard: document.getElementById('emailDetailCard'),
+    unreadCount: document.getElementById('unreadCount'),
+    mailboxTabs: document.querySelectorAll('.mailbox-tab'),
+  };
+
+  function escHtml(str) {
+    return (str ?? '').toString()
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '';
+
+    const now = new Date();
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+
+    const sameYear = date.getFullYear() === now.getFullYear();
+    return date.toLocaleDateString([], sameYear
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function formatFullDate(iso) {
+    if (!iso) return '';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString([], {
+      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+  }
+
+  function senderName(raw) {
+    if (!raw) return '(unknown sender)';
+    const match = raw.match(/^"?([^"<]*)"?\s*(<.*>)?$/);
+    return (match && match[1].trim()) || raw;
+  }
+
+  function setUnreadCount(count) {
+    els.unreadCount.textContent = count > 0 ? String(count) : '';
+  }
+
+  // ── Connection ──────────────────────────────────────────
+  async function checkConnection() {
+    try {
+      const res = await fetch(`${API_BASE}/status`);
+      const data = await res.json();
+      state.connected = !!data.connected;
+      state.email = data.email || null;
+    } catch (err) {
+      console.error('Failed to check email status:', err);
+      state.connected = false;
+    }
+    renderConnectionStatus();
+    return state.connected;
+  }
+
+  function renderConnectionStatus() {
+    if (state.connected) {
+      els.connectionStatus.innerHTML = `
+        <span class="connection-text"><span class="connection-dot"></span>Connected${state.email ? ' · ' + escHtml(state.email) : ''}</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" id="syncBtn">Sync inbox</button>
+          <button class="btn btn-danger" id="disconnectBtn">Disconnect</button>
+        </div>
+      `;
+      document.getElementById('syncBtn')?.addEventListener('click', syncInbox);
+      document.getElementById('disconnectBtn')?.addEventListener('click', disconnectEmail);
+    } else {
+      els.connectionStatus.innerHTML = `
+        <form id="connectForm" style="width:100%;display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div style="font-size:13px;color:var(--text-primary);font-weight:500;margin-bottom:4px">Connect your inbox</div>
+            <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">
+              Enter your email and an <strong>app password</strong> — no Google Cloud setup needed.
+              Turn on 2-step verification, then create an app password
+              (<a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">Gmail</a>
+              · <a href="https://account.live.com/proofs/AppPassword" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">Outlook</a>)
+              and paste it below. It's stored locally and only used to read your inbox.
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input type="email" id="connEmail" placeholder="you@gmail.com" autocomplete="username"
+                   required style="flex:1;min-width:200px">
+            <input type="password" id="connPassword" placeholder="app password" autocomplete="current-password"
+                   required style="flex:1;min-width:200px">
+            <button type="submit" class="btn btn-primary" id="connectBtn">Connect</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('connectForm')?.addEventListener('submit', connectEmail);
+    }
+  }
+
+  async function connectEmail(e) {
+    e.preventDefault();
+    const address = document.getElementById('connEmail').value.trim();
+    const password = document.getElementById('connPassword').value;
+    const btn = document.getElementById('connectBtn');
+    if (!address || !password) { toast('Enter your email and app password.', 'error'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Connecting…';
+    try {
+      const res = await fetch(`${API_BASE}/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: address, app_password: password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Connection failed (${res.status})`);
+
+      state.connected = true;
+      state.email = data.email || address;
+      renderConnectionStatus();
+      toast('Inbox connected. Syncing…', 'ok');
+      await syncInbox();
+    } catch (err) {
+      console.error('Failed to connect email:', err);
+      toast(err.message || "Couldn't connect. Check your details and try again.", 'error', 6000);
+      btn.disabled = false;
+      btn.textContent = 'Connect';
+    }
+  }
+
+  async function disconnectEmail() {
+    if (!await confirmDialog('Disconnect this inbox? Your app password will be removed.', { confirmText: 'Disconnect' })) return;
+    try {
+      await fetch(`${API_BASE}/disconnect`, { method: 'POST' });
+      state.connected = false;
+      state.email = null;
+      state.emails = [];
+      state.selectedId = null;
+      renderConnectionStatus();
+      renderEmailList();
+      renderEmptyDetail();
+      setUnreadCount(0);
+      toast('Inbox disconnected.', 'info');
+    } catch (err) {
+      console.error('Failed to disconnect email:', err);
+      toast("Couldn't disconnect. Try again.", 'error');
+    }
+  }
+
+  // ── Sync ────────────────────────────────────────────────
+  async function syncInbox() {
+    const btn = document.getElementById('syncBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+
+    try {
+      const res = await fetch(`${API_BASE}/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_results: 25 }),
+      });
+      if (!res.ok) throw new Error(`Sync failed: ${res.status}`);
+      await loadInbox();
+    } catch (err) {
+      console.error('Inbox sync failed:', err);
+      toast("Couldn't sync your inbox. Check the server logs.", 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sync inbox'; }
+    }
+  }
+
+  // ── List ────────────────────────────────────────────────
+  async function loadInbox() {
+    try {
+      const params = new URLSearchParams({ limit: '100' });
+      if (state.filter === 'unread') params.set('unread_only', 'true');
+
+      const res = await fetch(`${API_BASE}/inbox?${params.toString()}`);
+      if (!res.ok) throw new Error(`Inbox load failed: ${res.status}`);
+
+      const data = await res.json();
+      state.emails = data.emails || [];
+
+      const unreadCount = state.filter === 'unread'
+        ? state.emails.length
+        : state.emails.filter((e) => e.is_unread).length;
+      setUnreadCount(unreadCount);
+
+      renderEmailList();
+    } catch (err) {
+      console.error('Failed to load inbox:', err);
+      els.emailList.innerHTML = `<div class="empty-state">Couldn't load your inbox. Try syncing again.</div>`;
+    }
+  }
+
+  function renderEmailList() {
+    if (!state.connected) {
+      els.emailList.innerHTML = `<div class="empty-state">Connect Gmail to see your inbox.</div>`;
+      return;
+    }
+
+    if (state.emails.length === 0) {
+      const msg = state.filter === 'unread'
+        ? "You're all caught up — no unread emails."
+        : 'No emails yet. Try syncing your inbox.';
+      els.emailList.innerHTML = `<div class="empty-state">${escHtml(msg)}</div>`;
+      return;
+    }
+
+    els.emailList.innerHTML = state.emails.map((email) => `
+      <div class="email-row ${email.is_unread ? 'is-unread' : ''} ${email.id === state.selectedId ? 'is-selected' : ''}"
+           data-id="${escHtml(email.id)}">
+        <div class="email-row-top">
+          <span class="email-sender">${escHtml(senderName(email.sender))}</span>
+          <span class="email-time">${escHtml(formatTime(email.received_at))}</span>
+        </div>
+        <span class="email-subject">${escHtml(email.subject || '(no subject)')}</span>
+        <span class="email-snippet">${escHtml(email.snippet || '')}</span>
+      </div>
+    `).join('');
+
+    els.emailList.querySelectorAll('.email-row').forEach((row) => {
+      row.addEventListener('click', () => openEmail(row.dataset.id));
+    });
+  }
+
+  // ── Detail ──────────────────────────────────────────────
+  function renderEmptyDetail() {
+    els.emailDetailCard.innerHTML = `
+      <div class="email-empty-pane">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2.5" y="4" width="15" height="12" rx="1.5"/>
+          <path d="M3 5.5l6.3 5a1.2 1.2 0 0 0 1.4 0L17 5.5"/>
+        </svg>
+        <p>Select an email to read it</p>
+      </div>
+    `;
+    els.emailDetailCard.classList.remove('is-active');
+    els.emailListCard.classList.remove('is-hidden');
+  }
+
+  async function openEmail(id) {
+    state.selectedId = id;
+    renderEmailList();
+
+    els.emailDetailCard.classList.add('is-active');
+    els.emailListCard.classList.add('is-hidden');
+    els.emailDetailCard.innerHTML = `<div class="email-empty-pane"><p>Loading…</p></div>`;
+
+    try {
+      const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(`Failed to load email: ${res.status}`);
+      const email = await res.json();
+      renderEmailDetail(email);
+
+      const local = state.emails.find((e) => e.id === id);
+      if (local && local.is_unread) {
+        local.is_unread = false;
+        const unreadCount = state.filter === 'unread'
+          ? state.emails.length - 1
+          : state.emails.filter((e) => e.is_unread).length;
+        setUnreadCount(unreadCount);
+        renderEmailList();
+      }
+    } catch (err) {
+      console.error('Failed to open email:', err);
+      els.emailDetailCard.innerHTML = `<div class="email-empty-pane"><p>Couldn't load this email. Try again.</p></div>`;
+    }
+  }
+
+  // Turn raw URLs in plain-text emails into real, clickable links.
+  function linkify(escapedText) {
+    return escapedText.replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+      const clean = url.replace(/[.,;:)\]]+$/, '');           // don't swallow trailing punctuation
+      const trail = url.slice(clean.length);
+      return `<a href="${clean}" target="_blank" rel="noopener noreferrer">${clean}</a>${trail}`;
+    });
+  }
+
+  function renderEmailDetail(email) {
+    els.emailDetailCard.innerHTML = `
+      <button class="email-detail-back" id="backBtn">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+        Back to inbox
+      </button>
+
+      <h2 class="email-detail-subject">${escHtml(email.subject || '(no subject)')}</h2>
+      <div class="email-detail-meta">
+        <div class="email-detail-from">
+          ${escHtml(senderName(email.sender))}<span>${escHtml(email.sender || '')}</span>
+        </div>
+        <div class="email-detail-date">${escHtml(formatFullDate(email.received_at))}</div>
+      </div>
+
+      <div class="email-actions">
+        <button class="btn btn-primary" id="summarizeBtn">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6"/></svg>
+          Summarize
+        </button>
+      </div>
+
+      <div class="email-summary" id="summaryBox" style="display:none"></div>
+
+      <div class="email-body-divider"></div>
+      <div id="emailBodyHost"></div>
+    `;
+
+    renderEmailBody(email);
+
+    document.getElementById('backBtn')?.addEventListener('click', renderEmptyDetail);
+    document.getElementById('summarizeBtn')?.addEventListener('click', () => summarizeEmail(email.id));
+  }
+
+  function renderEmailBody(email) {
+    const host = document.getElementById('emailBodyHost');
+    if (!host) return;
+
+    const html = (email.html_body || '').trim();
+    if (html && window.DOMPurify) {
+      // Sanitize, then render inside a sandboxed iframe so the email's own CSS
+      // can't touch the app. No allow-scripts → inline JS in the email never runs.
+      const clean = DOMPurify.sanitize(html, {
+        FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+        FORBID_ATTR: ['onerror', 'onload', 'onclick'],
+      });
+      const frame = document.createElement('iframe');
+      frame.className = 'email-html-frame';
+      frame.setAttribute('sandbox', 'allow-same-origin allow-popups allow-popups-to-escape-sandbox');
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+      frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8">
+        <base target="_blank">
+        <meta name="referrer" content="no-referrer">
+        <style>
+          html,body{margin:0;padding:16px;background:#fff;color:#1a1a1a;
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;word-break:break-word;}
+          img{max-width:100%!important;height:auto!important;}
+          table{max-width:100%!important;}
+          a{color:#2563eb;}
+        </style></head><body>${clean}</body></html>`;
+      frame.addEventListener('load', () => {
+        try {
+          const doc = frame.contentDocument;
+          const h = doc ? doc.body.scrollHeight : 0;
+          if (h) frame.style.height = (h + 8) + 'px';
+        } catch (e) { frame.style.height = '600px'; }
+      });
+      host.innerHTML = '';
+      host.appendChild(frame);
+    } else {
+      // Plain-text email: escape, linkify URLs, preserve line breaks.
+      host.innerHTML = `<div class="email-detail-body">${linkify(escHtml(email.body || email.snippet || '(no content)'))}</div>`;
+    }
+  }
+
+  async function summarizeEmail(id) {
+    const btn = document.getElementById('summarizeBtn');
+    const box = document.getElementById('summaryBox');
+    if (!btn || !box) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Summarizing…';
+
+    // Show the section immediately, right under the button, with a loading shimmer.
+    box.style.display = 'block';
+    box.innerHTML = `
+      <span class="email-summary-label">Summary</span>
+      <div class="summary-skeleton"><span></span><span></span><span></span></div>`;
+
+    try {
+      const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}/summarize`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Summarize failed (${res.status})`);
+      box.innerHTML = `<span class="email-summary-label">Summary</span>${escHtml(data.summary || '')}`;
+    } catch (err) {
+      console.error('Failed to summarize email:', err);
+      box.innerHTML = `<span class="email-summary-label">Summary</span>${escHtml(err.message || "Couldn't generate a summary right now.")}`;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h6"/></svg>
+        Summarize`;
+    }
+  }
+
+  // ── Filters ─────────────────────────────────────────────
+  els.mailboxTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      els.mailboxTabs.forEach((t) => t.classList.remove('is-active'));
+      tab.classList.add('is-active');
+      state.filter = tab.dataset.filter;
+      state.selectedId = null;
+      renderEmptyDetail();
+      loadInbox();
+    });
+  });
+
+  // ── Init ────────────────────────────────────────────────
+  (async function init() {
+    const connected = await checkConnection();
+    if (connected) {
+      await loadInbox();
+    } else {
+      renderEmailList();
+    }
+  })();
+</script>
+</body>
+</html>
