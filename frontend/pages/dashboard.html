@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — Mindbase</title>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
-  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <link rel="stylesheet" href="page-theme.css?v=20260728">
 </head>
 <body>
-<script src="../js/dock.js?v=20260623"></script>
+<script src="../js/dock.js?v=20260728"></script>
 <div class="page-root">
 
   <header class="page-header">
@@ -63,8 +63,7 @@
       document.getElementById('statModel').textContent = health.current_model || 'None';
       const online = health.ollama === 'connected';
       document.getElementById('statStatus').textContent = online ? 'Online' : 'Offline';
-      document.getElementById('ollamaStatus').textContent = online ? 'Connected' : 'Disconnected';
-      document.getElementById('ollamaStatus').style.color = online ? 'rgba(74,222,128,0.8)' : 'rgba(248,113,113,0.8)';
+      document.getElementById('ollamaStatus').style.color = online ? 'var(--ok)' : 'var(--danger)';
       document.getElementById('apiUrl').textContent = location.origin;
       const convs = await fetch(`${API_BASE}/chat/conversations`).then(r => r.json());
       document.getElementById('statConversations').textContent = convs.length || '0';
@@ -101,7 +100,7 @@
     if (!pending.length) { el.textContent = 'All caught up.'; return; }
     el.innerHTML = '';
     el.style.padding = '0';
-    const dot = { low:'rgba(74,222,128,0.7)', medium:'rgba(250,204,21,0.7)', high:'rgba(248,113,113,0.7)' };
+    const dot = { low:'rgba(210,210,210,0.7)', medium:'rgba(165,165,165,0.7)', high:'rgba(115,115,115,0.7)' };
     pending.forEach(t => {
       const d = document.createElement('div');
       d.className = 'list-item';

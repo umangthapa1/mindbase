@@ -1,40 +1,38 @@
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import datetime
 from pathlib import Path
+from contextlib import asynccontextmanager
 import json
+import re as _re
+import logging
+import asyncio
+from typing import Optional
 
-from config import API_HOST, API_PORT, DEFAULT_MODEL, BASE_DIR
+from config import API_HOST, API_PORT, DEFAULT_MODEL, BASE_DIR, CORS_ORIGINS, CORS_ALLOW_CREDENTIALS
 from imap_service import email_service, serialize_email
 from database import init_db, get_db, ConversationDB, MessageDB, SessionLocal, NoteDB, TaskDB, CalendarEventDB, EmailDB
 from tasks_service import task_manager, serialize_task, serialize_event, _parse_date_string
 from models import (
-    Conversation, ConversationCreate, ChatRequest, ChatResponse, Message
+    Conversation, ConversationCreate, ConversationUpdate, ChatRequest, ChatResponse, Message,
+    ModelSwitchRequest, MemoryCreate, MemorySearch, MemoryUpdate,
+    NoteCreate, NoteUpdate, TaskCreate, TaskUpdate,
+    CalendarEventCreate, CalendarEventUpdate,
+    ResearchRequest, ResearchSaveRequest, DocumentAsk,
+    EmailConnect, EmailSync,
 )
-from ollama import ollama_client
+from ollama import ollama_client, aclose as _ollama_aclose
 from memory import memory_manager
 from documents import document_manager
 from research import research_agent
 from intelligence import chat_intelligence
 
-app = FastAPI(title="Mindbase AI Workspace")
+logger = logging.getLogger(__name__)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-init_db()
-
-# ── Email context helpers ────────────────────────────────────────────────────
-import re as _re
-
+# ── Email context helpers ──────────────────────────────────────────────────
 _EMAIL_PATTERNS = [
     r'(check|show|get|read|fetch|list|look at|see|find|search|open|summari[sz]e|reply|respond|draft).{0,40}(email|gmail|mail|inbox|message)',
     r'(email|gmail|mail|inbox|message).{0,40}(check|show|get|read|fetch|list|recent|latest|new|unread|from)',
@@ -129,9 +127,11 @@ def _extract_email_search_terms(message: str) -> dict:
     return result
 
 def _build_email_context(db: Session, message: str) -> str:
-    """Query EmailDB and return a formatted context block for the LLM."""
-    if not email_service.is_connected():
-        return ""
+    """Query locally synced EmailDB and return a formatted context block.
+
+    Reading emails that have already been synced must work even while the IMAP
+    connection is offline or has not been restored after a server restart.
+    """
 
     filters = _extract_email_search_terms(message)
     q = db.query(EmailDB)
@@ -176,17 +176,259 @@ def _build_email_context(db: Session, message: str) -> str:
         lines.append(block)
     return "\n".join(lines)
 
-@app.on_event("startup")
-async def startup():
+def _format_email_listing_response(email_context: str) -> str:
+    """Turn already-retrieved inbox metadata into a reliable, model-free reply."""
+    if email_context.startswith("[Gmail] "):
+        email_context = email_context[len("[Gmail] "):]
+    return f"Here are the matching emails from your local inbox:\n\n{email_context}"
+
+
+async def ensure_embedding_model_present():
+    """Verify that nomic-embed-text is installed. If not, auto-pull in the background."""
+    emb_model = "nomic-embed-text"
+    try:
+        models = await ollama_client.list_models()
+        is_installed = any(
+            m["name"] == emb_model or m["name"].startswith(f"{emb_model}:")
+            for m in models
+        )
+        if not is_installed:
+            logger.warning("Required embedding model '%s' is not installed.", emb_model)
+            success = await ollama_client.pull_model(emb_model)
+            if success:
+                logger.info("Embedding model '%s' is ready for search/memory.", emb_model)
+            else:
+                logger.error("Auto-pull for '%s' failed. Please run 'ollama pull %s' manually.", emb_model, emb_model)
+        else:
+            logger.info("Embedding model '%s' is already installed.", emb_model)
+    except Exception as e:
+        logger.error("Failed checking/pulling embedding model: %s", e)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialise the database on startup (not at import time).
+    init_db()
     health = await ollama_client.check_health()
     if health:
         try:
             await ollama_client.get_model()
         except Exception as e:
-            print(f"✗ Could not select Ollama model: {e}")
-        print(f"✓ Connected to Ollama at {ollama_client.host}")
+            logger.error("Could not select Ollama model: %s", e)
+        logger.info("Connected to Ollama at %s", ollama_client.host)
+        # Run embedding model validation asynchronously in background.
+        asyncio.create_task(ensure_embedding_model_present())
     else:
-        print(f"✗ Could not connect to Ollama at {ollama_client.host}")
+        logger.error("Could not connect to Ollama at %s", ollama_client.host)
+    yield
+    # Shutdown: close the shared pooled Ollama HTTP client so its keep-alive
+    # connections are released cleanly on reload/exit.
+    try:
+        await _ollama_aclose()
+    except Exception as e:
+        logger.warning("Error closing Ollama client on shutdown: %s", e)
+
+
+app = FastAPI(title="Mindbase AI Workspace", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Email context helpers ────────────────────────────────────────────────────
+
+_EMAIL_PATTERNS = [
+    # Original patterns kept for backward compatibility
+    r'(check|show|get|read|fetch|list|look at|see|find|search|open|summari[sz]e|reply|respond|draft).{0,40}(email|gmail|mail|inbox|message)',
+    r'(email|gmail|mail|inbox|message).{0,40}(check|show|get|read|fetch|list|recent|latest|new|unread|from)',
+    r'(any|do i have|got any|have any|are there|were there).{0,30}(email|mail|message)',
+    r'(what|which).{0,30}(email|mail|message|inbox)',
+    r'(unread|unopened).{0,30}(email|mail|message)',
+    r'(email|mail|message).{0,20}(unread|unopened|new|from)',
+    r'emails?.{0,40}from',
+    r'from.{0,40}emails?',
+    r'\binbox\b',
+    r'\bgmail\b',
+
+    # ENHANCED PATTERNS for natural language understanding
+    # Phrases that start with exploratory language
+    r'(tell\s+me\s+about|describe|explain|what.?s?\s+the?\s+status\s+of|how\s+many|show\s+me\s+what.?s?\s+in|look\s+at\s+my|see\s+if\s+I\s+have|did\s+I\s+get|have\s+I\s+received|any\s+(new\s+)?|are\s+there\s+|what\s+emails\s+do\s+I\s+have|do\s+I\s+have\s+any\s+email|got\s+any\s+email|no\s+new\s+email)\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
+    r'tell\s+me\s+.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
+    r'tell\s+me\s+.*\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
+
+    # Phrases that end with exploratory language
+    r'\b(email|emails?|mail|messages?|inbox|gmail).*\b(tell\s+me\s+about|describe|explain|what.?s?\s+the?\s+status\s+of|how\s+many|show\s+me\s+what.?s?\s+in|look\s+at\s+my|see\s+if\s+I\s+have|did\s+I\s+get|have\s+I\s+received|any\s+(new\s+)?|are\s+there\s+|what\s+emails\s+do\s+I\s+have|do\s+I\s+have\s+any\s+email|got\s+any\s+email|no\s+new\s+email)\b',
+
+    # Time-based email queries (more flexible)
+    r'\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
+    r'\b(email|emails?|mail|messages?|inbox|gmail).*\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b',
+
+    # Sender-focused queries
+    r'\b(from\s+|sender\s+|who\s+is\s+from\s+|messages\s+from\s+|email\s+from\s+|received\s+from\s+|got\s+email\s+from)\b.*\b([a-zA-Z0-9._%+\-@]+)',
+    r'\b([a-zA-Z0-9._%+\-@]+).*\b(from\s+|sender\s+|who\s+is\s+from\s+|messages\s+from\s+|email\s+from\s+|received\s+from\s+|got\s+email\s+from)\b',
+
+    # Content/topic-focused queries
+    r'\b(about\s+|regarding\s+|concerning\s+|topic\s+|subject\s+|regarding\s+|re:)\s*.*?\b(email|emails?|mail|messages?|inbox|gmail)\b',
+    r'\b(email|emails?|mail|messages?|inbox|gmail).*\b(about\s+|regarding\s+|concerning\s+|topic\s+|subject\s+|regarding\s+|re:)\s*.*?\b',
+
+    # Ordinal-focused email queries
+    r'\bthe\s+\d+(st|nd|rd|th)\s+email\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
+    r'\b(email|emails?|mail|messages?|inbox|gmail).*\bthe\s+\d+(st|nd|rd|th)\s+email\b',
+
+
+# Action-oriented email requests
+    r'\b(read\s+the\s+|open\s+the\s+|check\s+the\s+|look\s+at\s+the\s+|see\s+the\s+|what.?s?\s+in\s+the\s+|content\s+of\s+|meaning\s+of\s+meaning\s+of\s+|meaning\s+of\s+)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(email|message|mail)\b',
+    r'\b(email|message|mail)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(read\s+the\s+|open\s+the\s+|check\s+the\s+|look\s+at\s+the\s+|see\s+the\s+|what.?s?\s+in\s+the\s+|content\s+of\s+|meaning\s+of\s+|meaning\s+of\s+)\b',
+
+    # Summary requests
+    r'\b(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+|summarize\s+this\s+|summarize\s+the\s+)(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(email|message|mail)\b',
+    r'\b(email|message|mail)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+|summarize\s+this\s+|summarize\s+the\s+)\b',
+]
+
+# Follow-up references ("summarize the one from leetcode") that only make sense
+# when emails were just shown — matched only if recent history listed emails.
+_EMAIL_FOLLOWUP = _re.compile(
+    r'\b(summari[sz]e|summary|reply|respond|draft|forward)\b'
+    r'|\b(read|open)\s+(the|that|this|it|first|second|third|last|latest)\b'
+    # "the one", "the google one", "that email", "the leetcode message", "first one"…
+    r'|\b(the|that|this|first|second|third|fourth|last|latest)\s+(?:[a-z0-9]+\s+)?(one|email|message|mail)\b'
+    r'|\bfrom\s+[a-z0-9._%+\-@]+'
+    # Enhanced follow-up patterns
+    r'|\b(what\s+did\s+it\s+say|what\s+does\s+it\s+say|content\s+of|meaning\s+of|read\s+the\s+|open\s+the\s+|tell\s+me\s+about\s+|describe\s+|what.?s?\s+in\s+)\s+(the|that|this|it|first|second|third|last|latest|one|null)\s*(email|message|mail)\b'
+    r'|\b(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+|one\s+|null\s*)\s*(email|message|mail)\b'
+    r'|\b(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+|one\s+|null\s*)\s*(email|message|mail)\s*(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+|what\s+did\s+it\s+say|what\s+does\s+it\s+say|content\s+of|meaning\s+of|read\s+the\s+|open\s+the\s+|tell\s+me\s+about\s+|describe\s+|what.?s?\s+in\s+)\b',
+    _re.I,
+)
+
+def _history_shows_emails(history) -> bool:
+    """True if the conversation is in 'email mode' — a recent USER turn asked about
+    email (deterministic, pattern-based), or an assistant turn listed emails. Used so
+    short follow-ups like 'summarize the one from leetcode' resolve to email context."""
+    if not history:
+        return False
+    for msg in reversed(history[-6:]):
+        role = msg.get("role")
+        text = msg.get("content") or ""
+        if role == "user":
+            m = text.lower()
+            if any(_re.search(p, m) for p in _EMAIL_PATTERNS):
+                return True
+        elif role == "assistant":
+            if "Subject:" in text and ("From:" in text or "Received:" in text):
+                return True
+    return False
+
+def _is_email_query(message: str, history=None) -> bool:
+    msg = message.lower()
+    if any(_re.search(p, msg) for p in _EMAIL_PATTERNS):
+        return True
+    # A short follow-up referencing emails that were just listed.
+    if _history_shows_emails(history) and _EMAIL_FOLLOWUP.search(msg):
+        return True
+    return False
+
+def _extract_email_search_terms(message: str) -> dict:
+    """Pull out useful filters from the natural language query."""
+    msg = message.lower()
+    result = {"sender": None, "subject_keywords": [], "unread_only": False, "limit": 5, "want_body": False}
+
+    # unread intent
+    if any(w in msg for w in ["unread", "new ", "haven't read", "not read"]):
+        result["unread_only"] = True
+
+    # Intent to read a specific email in full (summarize / reply / open / "what does it say")
+    if any(w in msg for w in ["summari", "reply", "respond", "draft", "read the", "read that",
+                              "open the", "open that", "what does", "what's in", "whats in", "tell me about"]):
+        result["want_body"] = True
+        result["limit"] = 3
+
+    # "from X" sender hint
+    from_match = _re.search(r'\bfrom\s+([a-zA-Z0-9._%+\-@]+)', msg)
+    if from_match:
+        result["sender"] = from_match.group(1).strip()
+
+    # "the X email/one/message" → focus term (matched against sender or subject)
+    if not result["sender"]:
+        focus = _re.search(r'\bthe\s+([a-z0-9]{3,})\s+(?:email|one|message|mail)\b', msg)
+        if focus and focus.group(1) not in ("first", "second", "third", "last", "latest", "next"):
+            result["sender"] = focus.group(1).strip()
+
+    # "about X" / "regarding X" subject keywords
+    about_match = _re.search(r'\b(?:about|regarding|re:|subject)\s+["\']?([^"\',.?!]+)', msg)
+    if about_match:
+        result["subject_keywords"] = about_match.group(1).strip().split()
+
+    # quantity hints
+    num_match = _re.search(r'\b(\d+)\s+email', msg)
+    if num_match:
+        result["limit"] = min(int(num_match.group(1)), 20)
+    elif any(w in msg for w in ["latest", "recent", "last"]):
+        result["limit"] = 5
+    elif "all" in msg:
+        result["limit"] = 20
+
+    return result
+
+def _build_email_context(db: Session, message: str) -> str:
+    """Query locally synced EmailDB and return a formatted context block.
+
+    Reading emails that have already been synced must work even while the IMAP
+    connection is offline or has not been restored after a server restart.
+    """
+
+    filters = _extract_email_search_terms(message)
+    q = db.query(EmailDB)
+
+    if filters["unread_only"]:
+        q = q.filter(EmailDB.is_unread == True)
+    if filters["sender"]:
+        # Match the term against the sender OR the subject (covers "from leetcode"
+        # as well as "the puzzle one").
+        like = f"%{filters['sender']}%"
+        q = q.filter(EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like))
+    if filters["subject_keywords"]:
+        for kw in filters["subject_keywords"][:2]:
+            q = q.filter(
+                EmailDB.subject.ilike(f"%{kw}%") | EmailDB.snippet.ilike(f"%{kw}%")
+            )
+
+    emails = q.order_by(EmailDB.received_at.desc()).limit(filters["limit"]).all()
+
+    if not emails:
+        qualifier = "unread " if filters["unread_only"] else ""
+        return f"[Gmail] No {qualifier}emails found matching that query."
+
+    # Include the full (trimmed) body when the user wants to read/summarize a
+    # specific email, or when the query narrowed to a single message.
+    include_body = filters["want_body"] or len(emails) == 1
+
+    lines = [f"[Gmail] {len(emails)} email(s) retrieved:\n"]
+    for i, e in enumerate(emails, 1):
+        unread_marker = " (unread)" if e.is_unread else ""
+        received = e.received_at.strftime("%b %d, %I:%M %p") if e.received_at else "unknown date"
+        block = (
+            f"{i}. From: {e.sender}{unread_marker}\n"
+            f"   Subject: {e.subject or '(no subject)'}\n"
+            f"   Received: {received}\n"
+        )
+        if include_body and (e.body or "").strip():
+            body = _re.sub(r"[ \t]+", " ", e.body).strip()[:1800]
+            block += f"   Full message:\n{body}\n"
+        else:
+            block += f"   Preview: {(e.snippet or '')[:200]}\n"
+        lines.append(block)
+    return "\n".join(lines)
+
+
+def _format_email_listing_response(email_context: str) -> str:
+    """Turn already-retrieved inbox metadata into a reliable, model-free reply."""
+    if email_context.startswith("[Gmail] "):
+        email_context = email_context[len("[Gmail] "):]
+    return f"Here are the matching emails from your local inbox:\n\n{email_context}"
 
 @app.get("/api/health")
 async def health_check():
@@ -203,11 +445,10 @@ async def get_models():
     return {"models": models}
 
 @app.post("/api/ollama/switch")
-async def switch_model(data: dict):
-    model_name = data.get("model")
-    success = await ollama_client.set_model(model_name)
+async def switch_model(data: ModelSwitchRequest):
+    success = await ollama_client.set_model(data.model)
     if success:
-        return {"status": "success", "model": model_name}
+        return {"status": "success", "model": data.model}
     else:
         raise HTTPException(status_code=404, detail="Model not found")
 
@@ -277,11 +518,6 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     db.add(user_msg)
     db.commit()
 
-    try:
-        model = await ollama_client.get_model(request.model)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
     history = []
     for msg in conv.messages:
         if msg.id != user_msg.id:
@@ -291,34 +527,58 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     # Check email intent first — if this is an email query, skip task_manager
     # so it doesn't create a task called "Email Check" instead of fetching emails.
     email_context_block = ""
+    direct_email_response = ""
     if _is_email_query(request.message, history):
         email_context_block = _build_email_context(db, request.message)
         actions_taken = []
         if email_context_block:
             actions_taken.append({"type": "email_context", "summary": "Retrieved emails from Gmail"})
+            # Listing headers/previews does not need an LLM round-trip. Returning the
+            # locally retrieved data directly is faster and avoids competing model
+            # requests while the inbox is being checked. Reading, summarizing, and
+            # drafting still use the model below.
+            if not _extract_email_search_terms(request.message)["want_body"]:
+                direct_email_response = _format_email_listing_response(email_context_block)
+
+    if direct_email_response:
+        # Simple inbox listings are completely local: avoid model discovery and
+        # generic context gathering so the SSE response starts right away.
+        model = "local-inbox"
+        intent = "email"
+        context_sources = ["emails"]
+        messages = []
     else:
+        try:
+            model = await ollama_client.get_model(request.model)
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+
+    if not _is_email_query(request.message, history):
         actions_taken = await task_manager.process_with_history(
             request.message, history, db, model=model
         )
 
-    prepared = await chat_intelligence.prepare_chat(
-        user_message=request.message,
-        history=history,
-        db=db,
-        model=model,
-        agent_prompt=request.agent_prompt,
-        temperature=request.temperature,
-        actions_taken=actions_taken,
-        conv=conv,
-    )
-    messages = prepared.messages
+    if not direct_email_response:
+        prepared = await chat_intelligence.prepare_chat(
+            user_message=request.message,
+            history=history,
+            db=db,
+            model=model,
+            agent_prompt=request.agent_prompt,
+            temperature=request.temperature,
+            actions_taken=actions_taken,
+            conv=conv,
+        )
+        messages = prepared.messages
+        intent = prepared.intent
+        context_sources = prepared.context_sources
     gen_temperature = request.temperature
 
     # For email queries, prepend the Gmail context as a high-priority system message
     # so the LLM reads it instead of relying on the schedule/task context injected by
     # chat_intelligence. Insert right after the first system message (index 0) if one
     # exists, otherwise prepend to the front.
-    if email_context_block:
+    if email_context_block and not direct_email_response:
         email_sys = {
             "role": "system",
             "content": (
@@ -334,22 +594,26 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             messages.insert(sys_idx + 1, email_sys)
         else:
             messages.insert(0, email_sys)
-        print(f"[EMAIL DEBUG] Injected email system message into messages list at position {sys_idx + 1 if sys_idx is not None else 0}")
+        logger.debug("Injected email system message at position %s", (sys_idx + 1) if sys_idx is not None else 0)
 
     async def generate():
         response_text = ""
         meta = {
-            "intent": prepared.intent,
-            "context": prepared.context_sources,
+            "intent": intent,
+            "context": context_sources,
             "actions": actions_taken,
         }
         yield f"data: {json.dumps({'meta': meta})}\n\n"
 
-        async for chunk in ollama_client.stream_generate(
-            model, messages, temperature=gen_temperature
-        ):
-            response_text += chunk
-            yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+        if direct_email_response:
+            response_text = direct_email_response
+            yield f"data: {json.dumps({'chunk': response_text})}\n\n"
+        else:
+            async for chunk in ollama_client.stream_generate(
+                model, messages, temperature=gen_temperature
+            ):
+                response_text += chunk
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
 
         assistant_msg = MessageDB(
             conversation_id=request.conversation_id,
@@ -369,7 +633,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             ]
             await memory_manager.auto_extract_memory_from_chat(request.conversation_id, recent_messages)
         except Exception as e:
-            print(f"Memory extraction error: {e}")
+            logger.error("Memory extraction error: %s", e)
 
         yield f"data: {json.dumps({'done': True, 'message_id': assistant_msg.id})}\n\n"
 
@@ -386,13 +650,14 @@ def delete_conversation(conversation_id: str, db: Session = Depends(get_db)):
     return {"status": "deleted"}
 
 @app.put("/api/chat/conversations/{conversation_id}")
-def update_conversation(conversation_id: str, data: dict, db: Session = Depends(get_db)):
+def update_conversation(conversation_id: str, data: ConversationUpdate, db: Session = Depends(get_db)):
     conv = db.query(ConversationDB).filter(ConversationDB.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    if "title" in data:
-        conv.title = data["title"]
+    updates = data.model_dump(exclude_unset=True)
+    if "title" in updates:
+        conv.title = updates["title"]
 
     conv.updated_at = datetime.utcnow()
     db.commit()
@@ -407,15 +672,8 @@ def update_conversation(conversation_id: str, data: dict, db: Session = Depends(
 
 # Memory endpoints
 @app.post("/api/memory/create")
-async def create_memory(data: dict):
-    content = data.get("content")
-    memory_type = data.get("type", "reference")
-    tags = data.get("tags", [])
-
-    if not content:
-        raise HTTPException(status_code=400, detail="Content is required")
-
-    memory = await memory_manager.create_memory(content, memory_type, tags)
+async def create_memory(data: MemoryCreate):
+    memory = await memory_manager.create_memory(data.content, data.type, data.tags or [])
     return memory
 
 @app.get("/api/memory/list")
@@ -429,23 +687,13 @@ async def list_memories_by_type(memory_type: str):
     return {"memories": memories, "count": len(memories), "type": memory_type}
 
 @app.post("/api/memory/search")
-async def search_memories(data: dict):
-    query = data.get("query")
-    memory_type = data.get("type")
-
-    if not query:
-        raise HTTPException(status_code=400, detail="Query is required")
-
-    memories = await memory_manager.search_memories(query, memory_type, limit=10)
-    return {"memories": memories, "count": len(memories), "query": query}
+async def search_memories(data: MemorySearch):
+    memories = await memory_manager.search_memories(data.query, data.type, limit=10)
+    return {"memories": memories, "count": len(memories), "query": data.query}
 
 @app.put("/api/memory/{memory_id}")
-async def update_memory(memory_id: str, data: dict):
-    content = data.get("content")
-    tags = data.get("tags")
-    metadata = data.get("metadata")
-
-    updated = await memory_manager.update_memory(memory_id, content, tags, metadata)
+async def update_memory(memory_id: str, data: MemoryUpdate):
+    updated = await memory_manager.update_memory(memory_id, data.content, data.tags, data.metadata)
     if not updated:
         raise HTTPException(status_code=404, detail="Memory not found")
 
@@ -475,15 +723,11 @@ async def sync_note_to_memory(note: NoteDB):
     try:
         await memory_manager.upsert_note_memory(note.id, note.title, note.content, tags)
     except Exception as e:
-        print(f"Error syncing note to memory: {e}")
+        logger.error("Error syncing note to memory: %s", e)
 
 @app.post("/api/notes")
-async def create_note(data: dict, db: Session = Depends(get_db)):
-    title = data.get("title", "Untitled")
-    content = data.get("content", "")
-    tags = data.get("tags", [])
-
-    note = NoteDB(title=title, content=content, tags=",".join(tags))
+async def create_note(data: NoteCreate, db: Session = Depends(get_db)):
+    note = NoteDB(title=data.title, content=data.content, tags=",".join(data.tags or []))
     db.add(note)
     db.commit()
     db.refresh(note)
@@ -515,17 +759,18 @@ def get_note(note_id: str, db: Session = Depends(get_db)):
     return serialize_note(note)
 
 @app.put("/api/notes/{note_id}")
-async def update_note(note_id: str, data: dict, db: Session = Depends(get_db)):
+async def update_note(note_id: str, data: NoteUpdate, db: Session = Depends(get_db)):
     note = db.query(NoteDB).filter(NoteDB.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    if "title" in data:
-        note.title = data["title"]
-    if "content" in data:
-        note.content = data["content"]
-    if "tags" in data:
-        note.tags = ",".join(data["tags"]) if isinstance(data["tags"], list) else data["tags"]
+    updates = data.model_dump(exclude_unset=True)
+    if "title" in updates:
+        note.title = updates["title"]
+    if "content" in updates:
+        note.content = updates["content"]
+    if "tags" in updates and updates["tags"] is not None:
+        note.tags = ",".join(updates["tags"])
 
     note.updated_at = datetime.utcnow()
     db.commit()
@@ -547,26 +792,17 @@ async def delete_note(note_id: str, db: Session = Depends(get_db)):
 
 # Tasks endpoints
 @app.post("/api/tasks")
-def create_task(data: dict, db: Session = Depends(get_db)):
-    title = data.get("title")
-    if not title:
-        raise HTTPException(status_code=400, detail="Title is required")
-
-    due_raw = data.get("due_date")
-    due = _parse_date_string(due_raw) if due_raw else None
-
-    tags = data.get("tags", [])
-    if isinstance(tags, str):
-        tags = [t.strip() for t in tags.split(",") if t.strip()]
+def create_task(data: TaskCreate, db: Session = Depends(get_db)):
+    due = _parse_date_string(data.due_date) if data.due_date else None
 
     task = task_manager.create_task(
         db,
-        title,
-        description=data.get("description", ""),
-        status=data.get("status", "pending"),
-        priority=data.get("priority", "medium"),
+        data.title,
+        description=data.description,
+        status=data.status,
+        priority=data.priority,
         due_date=due,
-        tags=tags,
+        tags=data.tags or [],
     )
     return serialize_task(task)
 
@@ -597,23 +833,24 @@ def get_task(task_id: str, db: Session = Depends(get_db)):
     }
 
 @app.put("/api/tasks/{task_id}")
-def update_task(task_id: str, data: dict, db: Session = Depends(get_db)):
+def update_task(task_id: str, data: TaskUpdate, db: Session = Depends(get_db)):
     task = db.query(TaskDB).filter(TaskDB.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    if "title" in data:
-        task.title = data["title"]
-    if "description" in data:
-        task.description = data["description"]
-    if "status" in data:
-        task.status = data["status"]
-    if "priority" in data:
-        task.priority = data["priority"]
-    if "tags" in data:
-        task.tags = ",".join(data["tags"]) if isinstance(data["tags"], list) else data["tags"]
-    if "due_date" in data:
-        task.due_date = _parse_date_string(data["due_date"]) if data["due_date"] else None
+    updates = data.model_dump(exclude_unset=True)
+    if "title" in updates:
+        task.title = updates["title"]
+    if "description" in updates:
+        task.description = updates["description"]
+    if "status" in updates:
+        task.status = updates["status"]
+    if "priority" in updates:
+        task.priority = updates["priority"]
+    if "tags" in updates and updates["tags"] is not None:
+        task.tags = ",".join(updates["tags"])
+    if "due_date" in updates:
+        task.due_date = _parse_date_string(updates["due_date"]) if updates["due_date"] else None
 
     task.updated_at = datetime.utcnow()
     db.commit()
@@ -649,50 +886,50 @@ def get_calendar(
 
 
 @app.post("/api/calendar/events")
-def create_calendar_event(data: dict, db: Session = Depends(get_db)):
-    title = data.get("title")
-    start = _parse_date_string(data.get("start") or data.get("start_at", ""))
-    if not title or not start:
+def create_calendar_event(data: CalendarEventCreate, db: Session = Depends(get_db)):
+    start = _parse_date_string(data.start or data.start_at or "")
+    if not data.title or not start:
         raise HTTPException(status_code=400, detail="title and start are required")
 
-    end = _parse_date_string(data.get("end") or data.get("end_at", ""))
+    end = _parse_date_string(data.end or data.end_at or "")
     event = task_manager.create_event(
         db,
-        title,
+        data.title,
         start,
         end,
-        description=data.get("description", ""),
-        all_day=bool(data.get("all_day")),
-        location=data.get("location", ""),
-        color=data.get("color", "violet"),
+        description=data.description,
+        all_day=data.all_day,
+        location=data.location,
+        color=data.color,
     )
     return serialize_event(event)
 
 
 @app.put("/api/calendar/events/{event_id}")
-def update_calendar_event(event_id: str, data: dict, db: Session = Depends(get_db)):
+def update_calendar_event(event_id: str, data: CalendarEventUpdate, db: Session = Depends(get_db)):
     event = db.query(CalendarEventDB).filter(CalendarEventDB.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    if "title" in data:
-        event.title = data["title"]
-    if "description" in data:
-        event.description = data["description"]
-    if "start" in data or "start_at" in data:
-        parsed = _parse_date_string(data.get("start") or data.get("start_at"))
+    updates = data.model_dump(exclude_unset=True)
+    if "title" in updates:
+        event.title = updates["title"]
+    if "description" in updates:
+        event.description = updates["description"]
+    if "start" in updates or "start_at" in updates:
+        parsed = _parse_date_string(updates.get("start") or updates.get("start_at"))
         if parsed:
             event.start_at = parsed
-    if "end" in data or "end_at" in data:
-        parsed = _parse_date_string(data.get("end") or data.get("end_at"))
+    if "end" in updates or "end_at" in updates:
+        parsed = _parse_date_string(updates.get("end") or updates.get("end_at"))
         if parsed:
             event.end_at = parsed
-    if "all_day" in data:
-        event.all_day = 1 if data["all_day"] else 0
-    if "location" in data:
-        event.location = data["location"]
-    if "color" in data:
-        event.color = data["color"]
+    if "all_day" in updates:
+        event.all_day = 1 if updates["all_day"] else 0
+    if "location" in updates:
+        event.location = updates["location"]
+    if "color" in updates:
+        event.color = updates["color"]
 
     event.updated_at = datetime.utcnow()
     db.commit()
@@ -712,8 +949,8 @@ def delete_calendar_event(event_id: str, db: Session = Depends(get_db)):
 
 # Research endpoints
 @app.post("/api/research")
-async def start_research(data: dict, db: Session = Depends(get_db)):
-    query = data.get("query")
+async def start_research(data: ResearchRequest, db: Session = Depends(get_db)):
+    query = data.query
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
 
@@ -732,8 +969,8 @@ async def start_research(data: dict, db: Session = Depends(get_db)):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/api/research/save")
-async def save_research_report(data: dict, db: Session = Depends(get_db)):
-    report = data.get("report")
+async def save_research_report(data: ResearchSaveRequest, db: Session = Depends(get_db)):
+    report = data.report
     if not report:
         raise HTTPException(status_code=400, detail="Report is required")
 
@@ -743,7 +980,6 @@ async def save_research_report(data: dict, db: Session = Depends(get_db)):
 
     note_id = await research_agent.save_report_to_note(report, db)
     return {"status": "saved", "note_id": note_id}
-from fastapi import UploadFile, File
 
 @app.post("/api/documents/upload")
 async def upload_document(file: UploadFile = File(...)):
@@ -764,8 +1000,8 @@ async def list_documents():
     return {"documents": docs, "count": len(docs)}
 
 @app.post("/api/documents/{document_id}/ask")
-async def ask_document(document_id: str, data: dict):
-    query = data.get("query")
+async def ask_document(document_id: str, data: DocumentAsk):
+    query = data.query
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
 
@@ -794,10 +1030,10 @@ def email_status():
     return {"connected": email_service.is_connected(), "email": email_service.account_email()}
 
 @app.post("/api/email/connect")
-def email_connect(data: dict):
-    address = (data.get("email") or "").strip()
-    password = (data.get("app_password") or "").strip()
-    host = (data.get("host") or "").strip()
+def email_connect(data: EmailConnect):
+    address = (data.email or "").strip()
+    password = (data.app_password or "").strip()
+    host = (data.host or "").strip()
     if not address or not password:
         raise HTTPException(status_code=400, detail="Email and app password are required.")
     try:
@@ -816,11 +1052,13 @@ def email_disconnect():
     return {"status": "disconnected"}
 
 @app.post("/api/email/sync")
-def sync_email(data: dict = {}, db: Session = Depends(get_db)):
+def sync_email(data: Optional[EmailSync] = None, db: Session = Depends(get_db)):
     if not email_service.is_connected():
         raise HTTPException(status_code=401, detail="Email not connected")
-    max_results = data.get("max_results", 20)
-    unread_only = bool(data.get("unread_only", False))
+    # The body is optional (the client may POST empty), so fall back to defaults.
+    payload = data or EmailSync()
+    max_results = payload.max_results
+    unread_only = payload.unread_only
     try:
         new_emails = email_service.sync_inbox(db, max_results=max_results, unread_only=unread_only)
     except Exception as e:
@@ -863,11 +1101,13 @@ async def summarize_email(email_id: str, db: Session = Depends(get_db)):
         f"Summarize this email in 2-3 sentences. Be concise and factual.\n\n"
         f"From: {email.sender}\nSubject: {email.subject}\n\n{content[:4000]}"
     )
-    summary = (await ollama_client.generate(model, [{"role": "user", "content": prompt}], temperature=0.3)).strip()
-
-    # ollama_client.generate returns "[Error: ...]" strings rather than raising.
-    if summary.startswith("[Error") or not summary:
+    try:
+        summary = (await ollama_client.generate(model, [{"role": "user", "content": prompt}], temperature=0.3)).strip()
+    except Exception:
         raise HTTPException(status_code=502, detail="The model couldn't generate a summary. Check that Ollama is running.")
+
+    if not summary:
+        raise HTTPException(status_code=502, detail="The model returned an empty summary. Check that Ollama is running.")
 
     return {"summary": summary}
 

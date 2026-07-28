@@ -19,12 +19,18 @@ DATABASE_URL = f"sqlite:///{DATA_DIR / 'workspace.db'}"
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "mistral")
 
-API_HOST = os.getenv("API_HOST", "0.0.0.0")
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
-# Gmail OAuth2 (read-only inbox access)
-GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
-GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
-GMAIL_REDIRECT_URI = os.getenv(
-    "GMAIL_REDIRECT_URI", f"http://localhost:{API_PORT}/api/email/oauth2callback"
-)
+# CORS: comma-separated allow-list in CORS_ORIGINS (e.g.
+# "http://localhost:8000,http://127.0.0.1:8000,https://app.example.com").
+# When set, credentials are allowed. When unset (default) we fall back to a
+# permissive wildcard WITHOUT credentials — the only valid combination for "*",
+# and fine for a local single-user tool.
+_cors_env = os.getenv("CORS_ORIGINS", "").strip()
+if _cors_env:
+    CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()]
+    CORS_ALLOW_CREDENTIALS = True
+else:
+    CORS_ORIGINS = ["*"]
+    CORS_ALLOW_CREDENTIALS = False

@@ -3,6 +3,8 @@ Smart chat orchestration: context retrieval, intent routing, and prompt assembly
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -12,7 +14,9 @@ from sqlalchemy.orm import Session
 from documents import document_manager
 from memory import memory_manager
 from ollama import ollama_client
-from tasks_service import task_manager
+from tasks_service import task_manager, format_date_reference
+
+logger = logging.getLogger(__name__)
 
 RELEVANCE_THRESHOLD = 0.42
 MAX_HISTORY_MESSAGES = 28
@@ -114,22 +118,14 @@ class ChatIntelligence:
         winners = [i for i in tiebreak if scores.get(i, 0) == best_score]
         return winners[0] if winners else max(scores, key=scores.__getitem__)
 
-    async def maybe_generate_title(
+    async def _generate_title_text(
         self,
-        conv,          # ConversationDB instance
         history: List[Dict[str, str]],
         model: str,
-        db: Session,
     ) -> Optional[str]:
-        """
-        After the first exchange, if the conversation title still looks like a
-        placeholder, ask the LLM to generate a short, meaningful title.
-        Returns the new title string if one was generated, else None.
-        """
+        """Ask the LLM for a short title based on the first few messages."""
         if len(history) < MIN_HISTORY_FOR_TITLE:
             return None
-        if not PLACEHOLDER_TITLE_RE.match(conv.title or ""):
-            return None  # already has a real title
 
         # Use the first user message + first assistant reply for context
         snippet = "\n".join(
@@ -147,15 +143,59 @@ class ChatIntelligence:
                 [{"role": "user", "content": prompt}],
                 temperature=0.3,
             )
-            title = raw.strip().strip('"\'').split("\n")[0][:80]
-            if title and not title.lower().startswith("[error"):
-                from datetime import datetime
-                conv.title = title
-                conv.updated_at = datetime.utcnow()
-                db.commit()
-                return title
+            return raw.strip().strip('"\'').split("\n")[0][:80]
         except Exception as e:
-            print(f"Auto-title error: {e}")
+            logger.warning("Auto-title generation failed: %s", e)
+        return None
+
+    async def _update_title(self, conv_id: str, title: str) -> None:
+        """Write the title to the DB in a worker thread using a fresh session."""
+        from database import SessionLocal, ConversationDB
+        from datetime import datetime
+
+        def _commit():
+            with SessionLocal() as db:
+                conv = db.query(ConversationDB).filter(ConversationDB.id == conv_id).first()
+                if conv and PLACEHOLDER_TITLE_RE.match(conv.title or ""):
+                    conv.title = title
+                    conv.updated_at = datetime.utcnow()
+                    db.commit()
+
+        try:
+            await asyncio.to_thread(_commit)
+        except Exception as e:
+            logger.warning("Background title update failed: %s", e)
+
+    async def _background_title(
+        self,
+        conv_id: str,
+        history: List[Dict[str, str]],
+        model: str,
+    ) -> None:
+        """Background title generation + update (does not block the chat stream)."""
+        title = await self._generate_title_text(history, model)
+        if title:
+            await self._update_title(conv_id, title)
+
+    async def maybe_generate_title(
+        self,
+        conv,          # ConversationDB instance
+        history: List[Dict[str, str]],
+        model: str,
+        db: Session,
+    ) -> Optional[str]:
+        """
+        After the first exchange, if the conversation title still looks like a
+        placeholder, ask the LLM to generate a short, meaningful title.
+        Returns the new title string if one was generated, else None.
+        """
+        if not PLACEHOLDER_TITLE_RE.match(conv.title or ""):
+            return None  # already has a real title
+
+        title = await self._generate_title_text(history, model)
+        if title:
+            await self._update_title(conv.id, title)
+            return title
         return None
 
     async def _gather_memories(self, query: str, intent: str) -> tuple[str, List[str]]:
@@ -251,7 +291,7 @@ class ChatIntelligence:
 
         return "### Document excerpts\n" + "\n\n".join(lines), ["documents"]
 
-    def _gather_schedule(self, db: Session, query: str, intent: str) -> tuple[str, List[str]]:
+    async def _gather_schedule(self, db: Session, query: str, intent: str) -> tuple[str, List[str]]:
         # Don't inject tasks/calendar into email queries — it causes the LLM to
         # hallucinate task details instead of reading the Gmail context.
         email_terms = re.compile(
@@ -269,7 +309,16 @@ class ChatIntelligence:
                 query.lower(),
             )
         )
-        return task_manager.build_schedule_context(db, query, intent, full=full)
+        # `build_schedule_context` is synchronous SQLAlchemy work. Run it in a
+        # worker thread so the async event loop stays free for other requests while
+        # SQLite is queried. The DB session is not shared across threads — the thread
+        # opens a fresh SessionLocal for the duration of the call.
+        def _build():
+            from database import SessionLocal
+            with SessionLocal() as fresh_db:
+                return task_manager.build_schedule_context(fresh_db, query, intent, full=full)
+
+        return await asyncio.to_thread(_build)
 
     async def _maybe_summarize_history(
         self, messages: List[Dict[str, str]], model: str
@@ -295,7 +344,7 @@ class ChatIntelligence:
             summary = await ollama_client.generate(
                 model, [{"role": "user", "content": prompt}], temperature=0.3
             )
-            if summary and not summary.lstrip().startswith("[Error"):
+            if summary:
                 return [
                     {
                         "role": "system",
@@ -343,22 +392,26 @@ class ChatIntelligence:
 
         context_parts: List[str] = []
 
-        schedule_ctx, sched_src = self._gather_schedule(db, user_message, intent)
+        # Gather schedule, memory, and document contexts in parallel. All three are
+        # I/O-bound (SQLite/Chroma/Ollama embeddings) so concurrency here directly
+        # reduces first-token latency. `_gather_schedule` runs its SQLAlchemy work in
+        # a worker thread so it doesn't block the event loop.
+        (schedule_ctx, sched_src), (mem_ctx, mem_src), (doc_ctx, doc_src) = await asyncio.gather(
+            self._gather_schedule(db, user_message, intent),
+            self._gather_memories(user_message, intent),
+            self._gather_documents(user_message, intent),
+        )
         if schedule_ctx:
             context_parts.append(schedule_ctx)
             sources.extend(sched_src)
-
-        mem_ctx, mem_src = await self._gather_memories(user_message, intent)
         if mem_ctx:
             context_parts.append(mem_ctx)
             sources.extend(mem_src)
-
-        doc_ctx, doc_src = await self._gather_documents(user_message, intent)
         if doc_ctx:
             context_parts.append(doc_ctx)
             sources.extend(doc_src)
 
-        system = BASE_SYSTEM
+        system = BASE_SYSTEM + f"\n\n## Current date\n{format_date_reference()}"
         if actions_taken:
             action_lines = "\n".join(
                 f"- {a['message']}" for a in actions_taken if a.get("success")
@@ -396,13 +449,6 @@ class ChatIntelligence:
         chat_messages = await self._maybe_summarize_history(chat_messages, model)
         chat_messages = self._trim_messages(chat_messages)
         chat_messages.insert(0, {"role": "system", "content": system})
-
-        # Auto-title in the background — only runs when conv is passed
-        if conv is not None:
-            try:
-                await self.maybe_generate_title(conv, history, model, db)
-            except Exception as e:
-                print(f"Auto-title skipped: {e}")
 
         return PreparedChat(
             messages=chat_messages,

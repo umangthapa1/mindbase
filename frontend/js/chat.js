@@ -82,6 +82,11 @@ class ChatManager {
         try {
             this.conversations = await API.listConversations();
             this.renderConversations();
+
+            // Automatically select the first conversation if none is selected
+            if (this.conversations.length > 0 && this.currentConversationId === null) {
+                await this.selectConversation(this.conversations[0].id);
+            }
         } catch (err) {
             console.error('Failed to load conversations:', err);
             list.innerHTML = '<p class="conv-empty">Failed to load</p>';
@@ -175,7 +180,7 @@ class ChatManager {
             this.renderConversations();
             this.currentConversationId = conv.id;
             this.clearMessages(true);
-            $('#pageTitle').textContent = 'New conversation';
+            $('#pageTitle').textContent = conv.title || 'Conversation';
         } catch (err) {
             console.error('Failed to create conversation:', err);
         }
@@ -188,7 +193,7 @@ class ChatManager {
             if (this.currentConversationId === id) {
                 this.currentConversationId = null;
                 this.clearMessages(true);
-                $('#pageTitle').textContent = 'New conversation';
+                $('#pageTitle').textContent = 'Conversation';
             }
             this.renderConversations();
         } catch (err) {
@@ -325,12 +330,28 @@ class ChatManager {
         this.appendMessage('user', message);
         this.scrollBottom();
 
+        // If conversation title is still default, set it based on user message
+        const userMessageConv = this.conversations.find(c => c.id === this.currentConversationId);
+        if (userMessageConv && (userMessageConv.title === 'New Conversation' || userMessageConv.title === 'New conversation')) {
+            const title = message.length > 30 ? message.substring(0, 30) + '...' : message;
+            try {
+                await API.updateConversation(this.currentConversationId, title);
+                userMessageConv.title = title;
+                this.renderConversations();
+                $('#pageTitle').textContent = title;
+            } catch (e) {
+                console.error('Failed to update conversation title:', e);
+            }
+        }
+
+        // Declare streamBubble outside try block so it's accessible in catch
+        let streamBubble = null;
+        let assistantContent = '';
+        let contextHint = null;
+        let firstChunk = true;
+
         try {
             const selectedModel = $('#modelSelector').value;
-            let streamBubble = null;
-            let assistantContent = '';
-            let contextHint = null;
-            let firstChunk = true;
 
             for await (const data of API.streamMessage(
                 this.currentConversationId,
@@ -379,30 +400,38 @@ class ChatManager {
                 }
             }
 
-            // FIX 8: Update conversation title locally instead of reloading all conversations
-            if (assistantContent) {
-                const conv = this.conversations.find(c => c.id === this.currentConversationId);
-                if (conv && (conv.title === 'New Conversation' || conv.title === 'New conversation')) {
-                    try {
-                        const updated = await API.getConversation(this.currentConversationId);
-                        conv.title = updated.title;
-                        this.renderConversations();
-                        $('#pageTitle').textContent = updated.title || 'Conversation';
-                    } catch {
-                        // Non-critical — title just won't update in sidebar
-                    }
-                }
-            }
-
         } catch (err) {
-            // FIX 9: Don't leak raw error details to the user
             console.error('Failed to send message:', err);
-            this.appendMessage('assistant', 'Something went wrong. Please try again.');
+            // Keep any text already received instead of adding a misleading second
+            // assistant bubble. The browser console keeps the diagnostic detail.
+            if (streamBubble && assistantContent) {
+                const notice = document.createElement('p');
+                notice.style.cssText = 'font-size:11px;color:var(--text-tertiary);margin-top:6px;';
+                notice.textContent = 'Response interrupted before completion.';
+                streamBubble.appendChild(notice);
+                toast('The response was interrupted. Your partial reply was kept.', 'error');
+            } else {
+                this.appendMessage('assistant', 'Something went wrong. Please try again.');
+            }
         } finally {
             this.isLoading = false;
             this.setTyping(false);
             this.setSendLoading(false);
             input.focus();
+        }
+
+        // FIX 8: Update conversation title locally instead of reloading all conversations
+        // Only update if the title is still the default (indicating we haven't updated it yet)
+        const convToUpdate = this.conversations.find(c => c.id === this.currentConversationId);
+        if (convToUpdate && (convToUpdate.title === 'New Conversation' || convToUpdate.title === 'New conversation')) {
+            try {
+                const updated = await API.getConversation(this.currentConversationId);
+                convToUpdate.title = updated.title;
+                this.renderConversations();
+                $('#pageTitle').textContent = updated.title || 'Conversation';
+            } catch {
+                // Non-critical — title just won't update in sidebar
+            }
         }
     }
 }

@@ -5,15 +5,19 @@ from __future__ import annotations
 
 import re
 import json
+import logging
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import case, func, literal
 from sqlalchemy.orm import Session
 
 from database import CalendarEventDB, TaskDB
 from ollama import ollama_client
+
+logger = logging.getLogger(__name__)
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 VALID_STATUSES = {"pending", "in_progress", "completed"}
@@ -33,6 +37,18 @@ TIME_OF_DAY = {
     "evening": 18,
     "night": 20,
 }
+
+
+def format_date_reference(reference: Optional[datetime] = None) -> str:
+    """Human-readable anchor dates for prompts and scheduling."""
+    ref = reference or datetime.now()
+    today = ref.date()
+    return "\n".join([
+        f"Today: {today.strftime('%A, %B %d, %Y')}",
+        f"Tomorrow: {(today + timedelta(days=1)).strftime('%A, %B %d, %Y')}",
+        f"Yesterday: {(today - timedelta(days=1)).strftime('%A, %B %d, %Y')}",
+        f"Day after tomorrow: {(today + timedelta(days=2)).strftime('%A, %B %d, %Y')}",
+    ])
 @dataclass
 class ActionResult:
     action: str
@@ -132,6 +148,12 @@ def parse_natural_due(text: str, reference: Optional[datetime] = None) -> Tuple[
     elif re.search(r"\btomorrow\b", lower):
         due = end_of_day(ref.date() + timedelta(days=1))
         cleaned = re.sub(r"\b(tomorrow|by tomorrow|due tomorrow)\b", "", cleaned, flags=re.I)
+    elif re.search(r"\bday after tomorrow\b", lower):
+        due = end_of_day(ref.date() + timedelta(days=2))
+        cleaned = re.sub(r"\bday after tomorrow\b", "", cleaned, flags=re.I)
+    elif re.search(r"\byesterday\b", lower):
+        due = end_of_day(ref.date() - timedelta(days=1))
+        cleaned = re.sub(r"\byesterday\b", "", cleaned, flags=re.I)
     elif m := re.search(r"\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", lower):
         target = weekday_map[m.group(1)]
         days = (target - ref.weekday() + 7) % 7
@@ -232,7 +254,7 @@ def parse_natural_due(text: str, reference: Optional[datetime] = None) -> Tuple[
             hour=hour, minute=0, second=0, microsecond=0
         )
         cleaned = re.sub(tod_match.group(0), "", cleaned, flags=re.I)
-    else:
+    elif due is None:
         weekday_matches = list(
             re.finditer(
                 r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
@@ -322,7 +344,10 @@ def parse_event_timing(text: str, reference: Optional[datetime] = None) -> Tuple
         if start:
             start = start.replace(hour=hour, minute=minute, second=0, microsecond=0)
         else:
-            start = ref.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            base = date_hint.date() if date_hint else ref.date()
+            start = datetime.combine(base, datetime.min.time()).replace(
+                hour=hour, minute=minute, second=0, microsecond=0
+            )
         title = re.sub(time_m.group(0), "", title, flags=re.I).strip(" -–—,.")
 
     if start and start.hour == 23 and start.minute == 59:
@@ -636,15 +661,7 @@ class TaskManager:
         if not exists:
             raise Exception("Task creation failed: not found in DB after commit")
 
-        print("CREATED TASK CONFIRMED:", {
-            "id": task.id,
-            "title": task.title,
-            "description": task.description,
-            "priority": task.priority,
-            "status": task.status,
-            "due_date": task.due_date,
-            "tags": tags,
-        })
+        logger.debug("Task confirmed: id=%s title=%r", task.id, task.title)
 
         return task
 
@@ -676,35 +693,179 @@ class TaskManager:
         db.refresh(event)
         return event
 
+    def find_event_by_title(
+        self, db: Session, fragment: str
+    ) -> Optional[CalendarEventDB]:
+        fragment = fragment.strip().lower()
+        if not fragment:
+            return None
+
+        # Exact match
+        event = (
+            db.query(CalendarEventDB)
+            .filter(func.lower(CalendarEventDB.title) == fragment)
+            .order_by(CalendarEventDB.start_at.desc())
+            .first()
+        )
+        if event:
+            return event
+
+        # Substring match (fragment contained in title)
+        event = (
+            db.query(CalendarEventDB)
+            .filter(func.lower(CalendarEventDB.title).ilike(f"%{fragment}%"))
+            .order_by(CalendarEventDB.start_at.desc())
+            .first()
+        )
+        if event:
+            return event
+
+        # Short title contained in the long fragment
+        event = (
+            db.query(CalendarEventDB)
+            .filter(func.length(CalendarEventDB.title) <= len(fragment))
+            .filter(literal(fragment).ilike(
+                literal("%") + func.lower(CalendarEventDB.title) + literal("%")
+            ))
+            .order_by(CalendarEventDB.start_at.desc())
+            .first()
+        )
+        if event:
+            return event
+
+        # Word-overlap match (multi-word fragments)
+        words = [w for w in fragment.split() if len(w) > 2]
+        if words:
+            conditions = [func.lower(CalendarEventDB.title).ilike(f"%{w}%") for w in words]
+            score = sum(case((cond, 1), else_=0) for cond in conditions)
+            event = (
+                db.query(CalendarEventDB)
+                .filter(score >= max(1, len(words) // 2))
+                .order_by(score.desc(), CalendarEventDB.start_at.desc())
+                .first()
+            )
+            return event
+
+        return None
+
+    def update_event(
+        self,
+        db: Session,
+        event: CalendarEventDB,
+        start_at: Optional[datetime] = None,
+        end_at: Optional[datetime] = None,
+        *,
+        title: Optional[str] = None,
+    ) -> CalendarEventDB:
+        if title:
+            event.title = title.strip()
+        if start_at:
+            duration = (
+                (event.end_at - event.start_at)
+                if event.end_at and event.start_at
+                else timedelta(hours=1)
+            )
+            event.start_at = start_at
+            event.end_at = end_at if end_at else start_at + duration
+        elif end_at:
+            event.end_at = end_at
+        db.commit()
+        db.refresh(event)
+        return event
+
+    def _format_event_when(self, start: datetime, end: Optional[datetime] = None) -> str:
+        when = start.strftime("%a %b %d, %Y %I:%M %p").lstrip("0").replace(" 0", " ")
+        end_note = ""
+        if end and end != start + timedelta(hours=1):
+            end_note = f" – {end.strftime('%I:%M %p').lstrip('0')}"
+        return f"{when}{end_note}"
+
+    def _reschedule_event_from_text(
+        self, db: Session, event: CalendarEventDB, when_text: str
+    ) -> Optional[ActionResult]:
+        _, parsed_start, parsed_end = parse_event_timing(when_text)
+        if parsed_start:
+            new_start = parsed_start
+            new_end = parsed_end or (new_start + timedelta(hours=1))
+        else:
+            _, date_hint = parse_natural_due(when_text)
+            if not date_hint:
+                return None
+            new_start = event.start_at.replace(
+                year=date_hint.year,
+                month=date_hint.month,
+                day=date_hint.day,
+            )
+            duration = (
+                (event.end_at - event.start_at)
+                if event.end_at and event.start_at
+                else timedelta(hours=1)
+            )
+            new_end = new_start + duration
+
+        updated = self.update_event(db, event, new_start, new_end)
+        when = self._format_event_when(new_start, new_end)
+        return ActionResult(
+            "reschedule_event",
+            True,
+            f"Updated calendar: **{updated.title}** — {when}",
+            updated.id,
+            "event",
+        )
+
     def find_task_by_title(
         self, db: Session, fragment: str, open_only: bool = True
     ) -> Optional[TaskDB]:
         fragment = fragment.strip().lower()
         if not fragment:
             return None
-        q = db.query(TaskDB)
-        if open_only:
-            q = q.filter(TaskDB.status.in_(["pending", "in_progress"]))
-        tasks = q.order_by(TaskDB.updated_at.desc()).all()
 
-        for t in tasks:
-            if t.title.lower() == fragment:
-                return t
-        for t in tasks:
-            if fragment in t.title.lower():
-                return t
+        base_q = db.query(TaskDB)
+        if open_only:
+            base_q = base_q.filter(TaskDB.status.in_(["pending", "in_progress"]))
+
+        # Exact match
+        task = (
+            base_q.filter(func.lower(TaskDB.title) == fragment)
+            .order_by(TaskDB.updated_at.desc())
+            .first()
+        )
+        if task:
+            return task
+
+        # Fragment contained in title
+        task = (
+            base_q.filter(func.lower(TaskDB.title).ilike(f"%{fragment}%"))
+            .order_by(TaskDB.updated_at.desc())
+            .first()
+        )
+        if task:
+            return task
+
+        # Short title contained in long fragment
+        task = (
+            base_q.filter(func.length(TaskDB.title) <= len(fragment))
+            .filter(literal(fragment).ilike(
+                literal("%") + func.lower(TaskDB.title) + literal("%")
+            ))
+            .order_by(TaskDB.updated_at.desc())
+            .first()
+        )
+        if task:
+            return task
+
+        # Word-overlap match
         words = [w for w in fragment.split() if len(w) > 2]
         if words:
-            best = None
-            best_score = 0
-            for t in tasks:
-                title_l = t.title.lower()
-                score = sum(1 for w in words if w in title_l)
-                if score > best_score:
-                    best_score = score
-                    best = t
-            if best_score >= max(1, len(words) // 2):
-                return best
+            conditions = [func.lower(TaskDB.title).ilike(f"%{w}%") for w in words]
+            score = sum(case((cond, 1), else_=0) for cond in conditions)
+            task = (
+                base_q.filter(score >= max(1, len(words) // 2))
+                .order_by(score.desc(), TaskDB.updated_at.desc())
+                .first()
+            )
+            return task
+
         return None
 
     async def _llm_refine_task_payload(
@@ -736,8 +897,6 @@ class TaskManager:
                     temperature=0.2,
                 )
             ).strip()
-            if response.startswith("[Error"):
-                return base
 
             line = response.split("\n")[0].strip()
             parts = line.split("|")
@@ -1077,6 +1236,117 @@ class TaskManager:
                 return title
         return None
 
+    _DATE_WORDS_RE = re.compile(
+        r"\b(today|tomorrow|yesterday|day after tomorrow|"
+        r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+        r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+        r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|"
+        r"\d{1,2}(?:st|nd|rd|th)?)\b",
+        re.I,
+    )
+
+    def _text_has_date(self, text: str) -> bool:
+        return bool(self._DATE_WORDS_RE.search(text))
+
+    def _find_planning_date_from_history(
+        self, history: List[Dict[str, str]]
+    ) -> Optional[str]:
+        for msg in reversed(history):
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content", "").lower()
+            if re.search(r"\bday after tomorrow\b", content):
+                return "day after tomorrow"
+            if re.search(r"\btomorrow\b", content):
+                return "tomorrow"
+            if re.search(r"\byesterday\b", content):
+                return "yesterday"
+            if re.search(r"\btoday\b", content):
+                return "today"
+            if m := re.search(
+                r"\b(?:on|for)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+                content,
+            ):
+                return m.group(1)
+            if m := re.search(
+                r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+                r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+                r"\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?\b",
+                content,
+            ):
+                return m.group(0)
+            if m := re.search(
+                r"\b\d{1,2}(?:st|nd|rd|th)?\s+"
+                r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+                r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+                r"(?:\s*,?\s*\d{4})?\b",
+                content,
+            ):
+                return m.group(0)
+        return None
+
+    def _is_date_correction(self, text: str) -> bool:
+        lower = text.lower()
+        if not self._text_has_date(text):
+            return False
+        if self._is_event_request(lower) and re.search(
+            r"\b(add|create|put|schedule|book)\b", lower
+        ):
+            return False
+        correction_cues = (
+            r"\b(actually|not today|wrong|correction|meant|instead|rather|"
+            r"its on|it's on|change|move|reschedule|update|fix|correct)\b"
+        )
+        if re.search(correction_cues, lower):
+            return True
+        if re.search(r"\b(its|it's)\s+on\b", lower):
+            return True
+        if re.search(
+            r"\b(on|for)\s+(saturday|sunday|monday|tuesday|wednesday|thursday|friday)\b",
+            lower,
+        ) and re.search(r"\b\d{1,2}\b", lower):
+            return True
+        return False
+
+    def _find_recent_event_from_history(
+        self, history: List[Dict[str, str]], db: Session
+    ) -> Optional[CalendarEventDB]:
+        for msg in reversed(history):
+            content = msg.get("content", "")
+            if msg.get("role") == "assistant":
+                for pat in (
+                    r"Added to calendar:\s*\*\*(.+?)\*\*",
+                    r"Updated calendar:\s*\*\*(.+?)\*\*",
+                    r"calendar:\s*\*\*(.+?)\*\*",
+                ):
+                    m = re.search(pat, content, re.I)
+                    if m:
+                        event = self.find_event_by_title(db, m.group(1))
+                        if event:
+                            return event
+            if msg.get("role") == "user":
+                event = self.find_event_by_title(db, content)
+                if event:
+                    return event
+
+        recent = (
+            db.query(CalendarEventDB)
+            .order_by(CalendarEventDB.created_at.desc())
+            .limit(3)
+            .all()
+        )
+        for msg in reversed(history):
+            if msg.get("role") != "user":
+                continue
+            words = [w.lower() for w in re.findall(r"[a-z]{4,}", msg.get("content", ""))]
+            if not words:
+                continue
+            for event in recent:
+                title_l = event.title.lower()
+                if sum(1 for w in words if w in title_l) >= 2:
+                    return event
+        return recent[0] if recent else None
+
     async def process_with_history(
         self,
         message: str,
@@ -1091,6 +1361,20 @@ class TaskManager:
         actions = await self.process_user_message(text, db, model=model)
         if actions:
             return actions
+
+        plan_date = self._find_planning_date_from_history(history)
+        if plan_date and not self._text_has_date(text):
+            combined = f"{text} {plan_date}"
+            actions = await self.process_user_message(combined, db, model=model)
+            if actions:
+                return actions
+
+        if self._is_date_correction(text):
+            event = self._find_recent_event_from_history(history, db)
+            if event:
+                rescheduled = self._reschedule_event_from_text(db, event, text)
+                if rescheduled:
+                    return [rescheduled.to_dict()]
 
         if self._is_time_followup(text):
             pending = self._find_pending_calendar_request(history)
@@ -1137,15 +1421,22 @@ class TaskManager:
         has_keyword = any(k in lower for k in [
             "task", "todo", "remind", "schedule", "calendar", "calender",
             "event", "meeting", "appointment", "priority", "status", "due",
-            "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday",
+            "today", "tomorrow", "yesterday", "day after tomorrow",
+            "monday", "tuesday", "wednesday", "thursday",
             "friday", "saturday", "sunday", "jan", "feb", "mar", "apr", "may",
             "jun", "jul", "aug", "sep", "oct", "nov", "dec", "done", "finish",
-            "complete", "move to", "reschedule", "cancel", "delete"
+            "complete", "move to", "reschedule", "cancel", "delete", "actually",
+            "wrong", "meant", "instead", "change", "update", "fix",
         ])
         if not (has_time or has_keyword):
             return []
 
+        date_ref = format_date_reference()
         prompt = f"""You are a precise JSON extractor for a personal scheduling assistant.
+
+Current date reference (use this to resolve relative dates):
+{date_ref}
+
 Analyze the user's scheduling request: "{text}"
 
 Respond with ONLY a JSON object of this structure. Do not include comments, descriptions, or markdown formatting (no ```json code blocks). 
@@ -1153,15 +1444,15 @@ If a field is not present or mentioned in the user's request, set it to null (or
 
 Schema:
 {{
-  "intent": "create_task" | "update_task_priority" | "update_task_status" | "complete_task" | "reschedule_task" | "create_event" | "delete_event" | "other",
+  "intent": "create_task" | "update_task_priority" | "update_task_status" | "complete_task" | "reschedule_task" | "create_event" | "reschedule_event" | "delete_event" | "other",
   "title": "Clean title of the task/event (remove date, time, priority, tags, status words, and action prefixes like 'add task' or 'put on calendar')",
   "description": "Short description of the task/event if specified",
   "priority": "high" | "medium" | "low" | null,
   "status": "pending" | "in_progress" | "completed" | null,
-  "date_phrase": "Raw date phrase if specified (e.g. 'tomorrow', 'next Monday', 'June 15th', 'Sunday')",
+  "date_phrase": "Raw date phrase if specified (e.g. 'tomorrow', 'next Monday', 'June 15th', 'Sunday', 'July 25')",
   "time_phrase": "Raw time/duration phrase if specified (e.g. 'at 10am', 'from 2 to 3 PM', '6:45pm to 7:45pm')",
   "tags": ["tag1", "tag2"],
-  "target_title": "Title/fragment of existing task/event to update/complete/delete"
+  "target_title": "Title/fragment of existing task/event to update/complete/delete/reschedule"
 }}
 
 Examples:
@@ -1212,7 +1503,7 @@ Examples:
             )
             data = json.loads(res.strip())
         except Exception as e:
-            print(f"Ollama scheduling extraction error: {e}")
+            logger.warning("Ollama scheduling extraction error: %s", e)
             return []
 
         if not data or not isinstance(data, dict):
@@ -1226,11 +1517,14 @@ Examples:
             return any(p in val.lower() for p in placeholders)
 
         if is_placeholder(data.get("title")) or is_placeholder(data.get("target_title")):
-            print("Placeholder detected in Ollama output, falling back to regex")
+            logger.info("Placeholder detected in Ollama output, falling back to regex")
             return []
 
         intent = data.get("intent")
-        if intent not in ("create_task", "complete_task", "update_task_priority", "update_task_status", "reschedule_task", "create_event", "delete_event"):
+        if intent not in (
+            "create_task", "complete_task", "update_task_priority", "update_task_status",
+            "reschedule_task", "create_event", "reschedule_event", "delete_event",
+        ):
             return []
 
         # Helper to capitalize title
@@ -1374,7 +1668,7 @@ Examples:
             target = data.get("target_title") or data.get("title")
             if not target:
                 return []
-            event = db.query(CalendarEventDB).filter(CalendarEventDB.title.like(f"%{target}%")).order_by(CalendarEventDB.created_at.desc()).first()
+            event = self.find_event_by_title(db, target)
             if event:
                 db.delete(event)
                 db.commit()
@@ -1391,6 +1685,36 @@ Examples:
                     False,
                     f"Couldn't find calendar event matching “{target}”."
                 ).to_dict()]
+
+        # Handle reschedule_event
+        if intent == "reschedule_event":
+            target = data.get("target_title") or data.get("title")
+            when_parts = " ".join(
+                p for p in (data.get("date_phrase"), data.get("time_phrase")) if p
+            ).strip()
+            if not when_parts:
+                when_parts = text
+            event = self.find_event_by_title(db, target) if target else None
+            if not event:
+                event = (
+                    db.query(CalendarEventDB)
+                    .order_by(CalendarEventDB.created_at.desc())
+                    .first()
+                )
+            if not event:
+                return [ActionResult(
+                    "reschedule_event",
+                    False,
+                    "Couldn't find a calendar event to reschedule."
+                ).to_dict()]
+            rescheduled = self._reschedule_event_from_text(db, event, when_parts)
+            if rescheduled:
+                return [rescheduled.to_dict()]
+            return [ActionResult(
+                "reschedule_event",
+                False,
+                f"Could not parse new date/time for “{event.title}”."
+            ).to_dict()]
 
         # Handle create_task
         if intent == "create_task":
@@ -1559,7 +1883,7 @@ Examples:
                     if llm_actions:
                         return llm_actions
             except Exception as e:
-                print(f"Ollama scheduling integration fallback: {e}")
+                logger.warning("Ollama scheduling integration fallback: %s", e)
 
         results: List[ActionResult] = []
         lower = text.lower()
@@ -1708,6 +2032,12 @@ Examples:
         elif re.search(r"\btomorrow\b", lower):
             start = start + timedelta(days=1)
             end = start + timedelta(days=1)
+        elif re.search(r"\byesterday\b", lower):
+            start = start - timedelta(days=1)
+            end = start + timedelta(days=1)
+        elif re.search(r"\bday after tomorrow\b", lower):
+            start = start + timedelta(days=2)
+            end = start + timedelta(days=1)
         elif re.search(r"\bthis week\b", lower):
             end = start + timedelta(days=7)
         elif re.search(r"\bnext week\b", lower):
@@ -1729,14 +2059,17 @@ Examples:
     ) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
 
-        task_q = db.query(TaskDB).filter(TaskDB.due_date.isnot(None))
+        task_q = (
+            db.query(TaskDB)
+            .filter(TaskDB.due_date.isnot(None))
+            .filter(TaskDB.due_date >= start, TaskDB.due_date <= end)
+        )
         if not include_completed_tasks:
             task_q = task_q.filter(TaskDB.status != "completed")
-        for t in task_q.all():
-            if t.due_date and start <= t.due_date <= end:
-                item = task_to_calendar_item(t)
-                if item:
-                    items.append(item)
+        for t in task_q:
+            item = task_to_calendar_item(t)
+            if item:
+                items.append(item)
 
         events = (
             db.query(CalendarEventDB)
@@ -1756,7 +2089,12 @@ Examples:
     def build_schedule_context(
         self, db: Session, query: str, intent: str, *, full: bool = False
     ) -> Tuple[str, List[str]]:
-        """Rich schedule context for the model."""
+        """Rich schedule context for the model.
+
+        Previously this loaded every open task into memory and bucketed them in
+        Python. It now runs targeted SQL queries for each bucket so the per-turn
+        cost scales with the number of results, not total open tasks.
+        """
         now = datetime.now()
         today_start = datetime.combine(now.date(), datetime.min.time())
         week_end = today_start + timedelta(days=7)
@@ -1764,34 +2102,57 @@ Examples:
         sources: List[str] = []
         sections: List[str] = []
 
-        open_tasks = (
-            db.query(TaskDB)
-            .filter(TaskDB.status.in_(["pending", "in_progress"]))
+        open_q = db.query(TaskDB).filter(TaskDB.status.in_(["pending", "in_progress"]))
+        open_count = open_q.count()
+
+        def _date_bucket(field, lower=None, upper=None, upper_inclusive=False, include_null=False):
+            q = open_q
+            if include_null:
+                q = q.filter(field.is_(None))
+            else:
+                q = q.filter(field.isnot(None))
+                if lower is not None:
+                    q = q.filter(field >= lower)
+                if upper is not None:
+                    if upper_inclusive:
+                        q = q.filter(field <= upper)
+                    else:
+                        q = q.filter(field < upper)
+            return q
+
+        priority_order = case(
+            (TaskDB.priority == "high", 0),
+            (TaskDB.priority == "medium", 1),
+            (TaskDB.priority == "low", 2),
+            else_=9,
+        )
+
+        today_end = today_start + timedelta(days=1)
+
+        overdue = (
+            _date_bucket(TaskDB.due_date, upper=today_start)
+            .order_by(priority_order, TaskDB.due_date.asc())
+            .limit(10)
             .all()
         )
-        open_tasks.sort(
-            key=lambda t: (
-                PRIORITY_ORDER.get(t.priority, 9),
-                t.due_date or datetime.max,
-            )
+        due_today = (
+            _date_bucket(TaskDB.due_date, lower=today_start, upper=today_end)
+            .order_by(priority_order, TaskDB.due_date.asc())
+            .limit(12)
+            .all()
         )
-
-        overdue = []
-        due_today = []
-        due_week = []
-        no_date = []
-
-        for t in open_tasks:
-            if t.due_date:
-                d = t.due_date.date() if isinstance(t.due_date, datetime) else t.due_date
-                if d < now.date():
-                    overdue.append(t)
-                elif d == now.date():
-                    due_today.append(t)
-                elif t.due_date <= week_end:
-                    due_week.append(t)
-            else:
-                no_date.append(t)
+        # `due_week` is only used for the snapshot count, so count in SQL rather
+        # than fetching all rows. Excludes today (handled by `due_today`).
+        due_week_count = (
+            open_q.filter(TaskDB.due_date >= today_end, TaskDB.due_date <= week_end)
+            .count()
+        )
+        no_date = (
+            _date_bucket(TaskDB.due_date, include_null=True)
+            .order_by(priority_order, TaskDB.updated_at.desc())
+            .limit(8)
+            .all()
+        )
 
         # Always-on snapshot (compact)
         snapshot_parts = []
@@ -1799,8 +2160,8 @@ Examples:
             snapshot_parts.append(f"{len(overdue)} overdue")
         if due_today:
             snapshot_parts.append(f"{len(due_today)} due today")
-        if due_week:
-            snapshot_parts.append(f"{len(due_week)} due this week")
+        if due_week_count:
+            snapshot_parts.append(f"{due_week_count} due this week")
         upcoming_events = (
             db.query(CalendarEventDB)
             .filter(CalendarEventDB.start_at >= now, CalendarEventDB.start_at <= week_end)
@@ -1811,8 +2172,8 @@ Examples:
         if upcoming_events:
             snapshot_parts.append(f"{len(upcoming_events)} upcoming events")
 
-        if open_tasks and not snapshot_parts:
-            snapshot_parts.append(f"{len(open_tasks)} open")
+        if open_count and not snapshot_parts:
+            snapshot_parts.append(f"{open_count} open")
 
         planning_intent = intent in ("planning", "calendar")
         has_schedule_keyword = bool(re.search(
@@ -1820,8 +2181,11 @@ Examples:
             query.lower(),
         ))
 
-        if (snapshot_parts or full or open_tasks) and (full or planning_intent or has_schedule_keyword):
-            lines = [f"**Now:** {now.strftime('%A %Y-%m-%d %H:%M')}"]
+        if (snapshot_parts or full or open_count) and (full or planning_intent or has_schedule_keyword):
+            lines = [
+                f"**Now:** {now.strftime('%A %Y-%m-%d %H:%M')}",
+                format_date_reference(now),
+            ]
             if snapshot_parts:
                 lines.append(f"**Summary:** {', '.join(snapshot_parts)}")
             sections.append("### Schedule snapshot\n" + "\n".join(lines))
@@ -1845,18 +2209,23 @@ Examples:
             sections.append("### Due today\n" + "\n".join(lines))
 
         range_start, range_end = self.infer_date_range(query)
-        week_tasks = [t for t in open_tasks if t.due_date and range_start <= t.due_date <= range_end]
-        if week_tasks and not due_today:
+        range_tasks = (
+            _date_bucket(TaskDB.due_date, lower=range_start, upper=range_end)
+            .order_by(priority_order, TaskDB.due_date.asc())
+            .limit(14)
+            .all()
+        )
+        if range_tasks and not due_today:
             lines = [
                 f"- {t.due_date.strftime('%a %m/%d')} [{t.priority}] {t.title}"
-                for t in week_tasks[:12]
+                for t in range_tasks[:12]
             ]
             sections.append(
                 f"### Tasks in range ({range_start.date()} → {range_end.date()})\n"
                 + "\n".join(lines)
             )
 
-        if no_date and (planning_intent or calendar_keywords):
+        if no_date and (planning_intent or has_schedule_keyword):
             lines = [f"- [{t.priority}] {t.title}" for t in no_date[:6]]
             sections.append("### Backlog (no due date)\n" + "\n".join(lines))
 
@@ -1878,7 +2247,7 @@ Examples:
                 sections.append("### Calendar events\n" + "\n".join(lines))
                 sources.append("calendar_events")
 
-        if open_tasks and planning_intent:
+        if open_count and planning_intent:
             sources.append("tasks")
 
         return "\n\n".join(sections), list(dict.fromkeys(sources))

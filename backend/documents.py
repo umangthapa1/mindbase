@@ -1,10 +1,15 @@
 from pathlib import Path
 import uuid
+import logging
 from typing import List, Optional, Dict
 from datetime import datetime
 import json
+import io
+import time
 
 from pypdf import PdfReader
+
+logger = logging.getLogger(__name__)
 from docx import Document as DocxDocument
 from config import UPLOADS_DIR, CHROMA_DIR
 from ollama import ollama_client
@@ -20,57 +25,73 @@ class DocumentManager:
             metadata={"hnsw:space": "cosine"}
         )
         self.embedding_model = "nomic-embed-text"
+        # Cache the document list. list_documents is called every chat turn
+        # (intelligence._gather_documents) while the collection itself changes
+        # only on upload or delete. A short TTL keeps the cache fresh without
+        # hitting Chroma on every message.
+        self._list_cache: Optional[List[Dict]] = None
+        self._list_cache_at: float = 0.0
+        self._list_cache_ttl: float = 30.0
+
+    def _invalidate_list_cache(self) -> None:
+        self._list_cache = None
+        self._list_cache_at = 0.0
 
     async def upload_document(self, filename: str, content: bytes) -> Optional[Dict]:
-        try:
-            doc_id = str(uuid.uuid4())
-            file_ext = Path(filename).suffix.lower()
+        doc_id = str(uuid.uuid4())
+        file_ext = Path(filename).suffix.lower()
 
-            text = await self._extract_text(filename, content, file_ext)
-            if not text or len(text.strip()) == 0:
-                return None
+        text = await self._extract_text(filename, content, file_ext)
+        if not text or len(text.strip()) == 0:
+            raise ValueError("Document contains no readable text or text extraction failed.")
 
-            file_path = self.uploads_dir / f"{doc_id}{file_ext}"
-            file_path.write_bytes(content)
+        file_path = self.uploads_dir / f"{doc_id}{file_ext}"
+        file_path.write_bytes(content)
 
-            chunks = self._chunk_text(text)
+        chunks = self._chunk_text(text)
+        if not chunks:
+            raise ValueError("Failed to split document into readable chunks.")
 
-            embeddings = []
-            for chunk in chunks:
-                emb = await ollama_client.generate_embedding(chunk, self.embedding_model)
-                embeddings.append(emb if emb else [])
+        embeddings = []
+        for i, chunk in enumerate(chunks):
+            emb = await ollama_client.generate_embedding(chunk, self.embedding_model)
+            if not emb:
+                raise RuntimeError(
+                    f"Failed to generate embedding for chunk {i+1}/{len(chunks)}. "
+                    f"Verify that Ollama is running and the embedding model '{self.embedding_model}' is installed (run 'ollama pull {self.embedding_model}')."
+                )
+            embeddings.append(emb)
 
-            chunk_ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
+        chunk_ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
 
-            self.collection.add(
-                ids=chunk_ids,
-                embeddings=embeddings,
-                documents=chunks,
-                metadatas=[{
-                    "document_id": doc_id,
-                    "filename": filename,
-                    "chunk_index": i,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "file_type": file_ext
-                } for i in range(len(chunks))]
-            )
-
-            return {
-                "id": doc_id,
+        self.collection.add(
+            ids=chunk_ids,
+            embeddings=embeddings,
+            documents=chunks,
+            metadatas=[{
+                "document_id": doc_id,
                 "filename": filename,
-                "type": file_ext,
-                "chunks": len(chunks),
-                "size": len(content),
-                "created_at": datetime.utcnow().isoformat()
-            }
-        except Exception as e:
-            print(f"Error uploading document: {e}")
-            return None
+                "chunk_index": i,
+                "created_at": datetime.utcnow().isoformat(),
+                "file_type": file_ext
+            } for i in range(len(chunks))]
+        )
+
+        self._invalidate_list_cache()
+
+        return {
+            "id": doc_id,
+            "filename": filename,
+            "type": file_ext,
+            "chunks": len(chunks),
+            "size": len(content),
+            "created_at": datetime.utcnow().isoformat()
+        }
 
     async def _extract_text(self, filename: str, content: bytes, file_ext: str) -> Optional[str]:
         try:
             if file_ext == ".pdf":
-                pdf = PdfReader(content if isinstance(content, bytes) else content.seek(0))
+                pdf = PdfReader(io.BytesIO(content))
                 text = ""
                 for page in pdf.pages:
                     text += page.extract_text()
@@ -80,14 +101,13 @@ class DocumentManager:
                 return content.decode('utf-8', errors='ignore')
 
             elif file_ext == ".docx":
-                import io
                 doc = DocxDocument(io.BytesIO(content))
                 text = "\n".join([para.text for para in doc.paragraphs])
                 return text
 
             return None
         except Exception as e:
-            print(f"Error extracting text: {e}")
+            logger.warning("Error extracting text: %s", e)
             return None
 
     def _chunk_text(self, text: str, chunk_size: int = 512, overlap: int = 100) -> List[str]:
@@ -212,7 +232,7 @@ Summary:"""
 
             return summary.strip()
         except Exception as e:
-            print(f"Error summarizing: {e}")
+            logger.warning("Error summarizing: %s", e)
             return None
 
     def delete_document(self, document_id: str) -> bool:
@@ -225,12 +245,19 @@ Summary:"""
             for file in self.uploads_dir.glob(file_pattern):
                 file.unlink()
 
+            self._invalidate_list_cache()
             return True
         except Exception as e:
-            print(f"Error deleting document: {e}")
+            logger.warning("Error deleting document: %s", e)
             return False
 
     async def list_documents(self) -> List[Dict]:
+        if (
+            self._list_cache is not None
+            and (time.monotonic() - self._list_cache_at) < self._list_cache_ttl
+        ):
+            return list(self._list_cache)
+
         docs = {}
         results = self.collection.get(limit=1000)
 
@@ -248,6 +275,8 @@ Summary:"""
                 if doc_id:
                     docs[doc_id]["chunks"] += 1
 
-        return list(docs.values())
+        self._list_cache = list(docs.values())
+        self._list_cache_at = time.monotonic()
+        return list(self._list_cache)
 
 document_manager = DocumentManager()

@@ -1,4 +1,5 @@
 import chromadb
+import logging
 import uuid
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -7,6 +8,8 @@ import re
 
 from config import CHROMA_DIR
 from ollama import ollama_client
+
+logger = logging.getLogger(__name__)
 
 class MemoryManager:
     def __init__(self):
@@ -80,10 +83,9 @@ class MemoryManager:
                 tags=memory_tags,
                 metadata=metadata
             )
-        if updated:
-            return updated
-        else:
-            print(f"Warning: update_memory failed for {memory_id}, re-adding as new entry")
+            if updated:
+                return updated
+            logger.warning("update_memory failed for %s, re-adding as new entry", memory_id)
 
         embedding = await ollama_client.generate_embedding(memory_content, self.embedding_model)
         now = datetime.utcnow().isoformat()
@@ -131,7 +133,6 @@ class MemoryManager:
             n_results=limit,
             where=where_filter
         )
-        # After line 97 (the self.collection.query(...) call), add:
         if not results or not results.get('documents') or not results['documents'][0]:
             return []
         memories = []
@@ -236,7 +237,7 @@ class MemoryManager:
                 "updated_at": datetime.utcnow().isoformat()
             }
         except Exception as e:
-            print(f"Error updating memory: {e}")
+            logger.error("Error updating memory: %s", e)
             return None
 
     async def delete_memory(self, memory_id: str) -> bool:
@@ -244,7 +245,7 @@ class MemoryManager:
             self.collection.delete(ids=[memory_id])
             return True
         except Exception as e:
-            print(f"Error deleting memory: {e}")
+            logger.error("Error deleting memory: %s", e)
             return False
 
     async def get_all_memories(self, limit: int = 100) -> List[Dict]:
@@ -467,7 +468,7 @@ class MemoryManager:
             )
 
         except Exception as e:
-            print(f"Error during memory extraction: {e}")
+            logger.error("Error during memory extraction: %s", e)
             return None
 
 memory_manager = MemoryManager()

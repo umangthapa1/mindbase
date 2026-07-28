@@ -5,17 +5,32 @@ marked.setOptions({ breaks: true, gfm: true });
 function renderMarkdown(text) {
     const renderer = new marked.Renderer();
 
-    renderer.code = (code) => {
-        const highlighted = hljs.highlightAuto(code.text).value;
-        return `<pre class="bg-slate-900 border border-slate-800 rounded p-3 overflow-x-auto"><code class="hljs">${highlighted}</code></pre>`;
+    renderer.code = (codeOrToken) => {
+        // Marked v11 passes the source as a string; newer releases pass a token.
+        const source = typeof codeOrToken === 'string' ? codeOrToken : codeOrToken.text;
+        const highlighted = hljs.highlightAuto(source || '').value;
+        return `<pre class="code-block"><code class="hljs">${highlighted}</code></pre>`;
     };
 
-    renderer.codespan = (code) => {
-        return `<code class="bg-slate-800 px-2 py-1 rounded text-sm font-mono">${code.text}</code>`;
+    renderer.codespan = (codeOrToken) => {
+        const source = typeof codeOrToken === 'string' ? codeOrToken : codeOrToken.text;
+        return `<code class="inline-code">${escapeHTML(source || '')}</code>`;
     };
 
-    renderer.link = (token) => {
-        return `<a href="${token.href}" target="_blank" rel="noopener noreferrer" class="text-violet-400 hover:text-violet-300">${token.text}</a>`;
+    renderer.link = (hrefOrToken, _title, text) => {
+        // Marked v11 uses (href, title, text), while current releases pass a token.
+        const href = typeof hrefOrToken === 'string' ? hrefOrToken : hrefOrToken.href;
+        const label = typeof hrefOrToken === 'string' ? text : hrefOrToken.text;
+        return `<a href="${escapeHTML(href || '')}" target="_blank" rel="noopener noreferrer" class="markdown-link">${escapeHTML(label || '')}</a>`;
+    };
+
+    // Chat and inbox content can contain literal addresses such as
+    // `<noreply@example.com>`. Treat all raw HTML as text: it prevents Marked
+    // from swallowing the rest of a message as an unknown HTML element and is
+    // the safe default for model-generated content.
+    renderer.html = (htmlOrToken) => {
+        const source = typeof htmlOrToken === 'string' ? htmlOrToken : htmlOrToken.text;
+        return escapeHTML(source || '');
     };
 
     const rawHTML = marked.parse(text, { renderer });

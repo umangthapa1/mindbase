@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Documents — Mindbase</title>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
-  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .doc-card { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:10px; transition:border-color 150ms ease; }
     .doc-card:hover { border-color:var(--border-mid); }
@@ -17,7 +17,7 @@
   </style>
 </head>
 <body>
-<script src="../js/dock.js?v=20260623"></script>
+<script src="../js/dock.js?v=20260728"></script>
 <div class="page-root">
 
   <header class="page-header">
@@ -65,10 +65,76 @@
   </div>
 </div>
 
+<!-- Summary Modal -->
+<div id="summaryModal" style="display:none" class="modal-overlay">
+  <div class="modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <span id="summaryDocTitle" style="font-size:14px;font-weight:500;color:var(--text-primary)">Document summary</span>
+      <button class="icon-x close-modal-summary" id="closeModalSummary" aria-label="Close" style="color:var(--text-secondary)"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>
+    </div>
+    <div id="summaryContent" style="background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:8px;padding:14px;font-size:13px;line-height:1.6;color:var(--text-primary);max-height:400px;overflow-y:auto;margin-bottom:20px;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-ghost" id="closeSummaryBtn">Close</button>
+      <button class="btn btn-primary" id="saveToNotesBtn">Save to Notes</button>
+    </div>
+  </div>
+</div>
+
 <script src="../js/toast.js"></script>
 <script>
   const API_BASE = '/api';
   let currentDocId = null;
+  let currentDocFilename = null; // for saving to notes
+
+  // Summary modal elements
+  const summaryModal = document.getElementById('summaryModal');
+  const summaryContent = document.getElementById('summaryContent');
+  const summaryDocTitle = document.getElementById('summaryDocTitle');
+  const closeSummaryBtn = document.getElementById('closeSummaryBtn');
+  const closeModalSummary = document.getElementById('closeModalSummary'); // the X button
+  const saveToNotesBtn = document.getElementById('saveToNotesBtn');
+
+  // Summary modal handlers
+  closeModalSummary.addEventListener('click', () => {
+    summaryModal.style.display = 'none';
+  });
+  closeSummaryBtn.addEventListener('click', () => {
+    summaryModal.style.display = 'none';
+  });
+  summaryModal.addEventListener('click', e => {
+    if(e.target===summaryModal)
+      summaryModal.style.display = 'none';
+  });
+
+  // Save to notes
+  saveToNotesBtn.addEventListener('click', async () => {
+    if (!currentDocId || !currentDocFilename) {
+      toast('Error: document information missing', 'error');
+      return;
+    }
+    saveToNotesBtn.disabled = true;
+    saveToNotesBtn.textContent = 'Saving…';
+    try {
+      const res = await fetch(`${API_BASE}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: currentDocFilename,
+          content: summaryContent.textContent
+        })
+      });
+      if (res.ok) {
+        toast('Summary saved to notes', 'ok');
+      } else {
+        throw new Error('Failed to save note');
+      }
+    } catch (e) {
+      toast('Error saving to notes: ' + e.message, 'error');
+    } finally {
+      saveToNotesBtn.disabled = false;
+      saveToNotesBtn.textContent = 'Save to Notes';
+    }
+  });
 
   async function loadDocuments() {
     try {
@@ -91,59 +157,130 @@
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost qa-btn" style="flex:1;font-size:12px" data-id="${doc.id}">Ask</button>
-          <button class="btn btn-ghost summary-btn" style="flex:1;font-size:12px" data-id="${doc.id}">Summary</button>
+          <button class="btn btn-ghost summary-btn" style="flex:1;font-size:12px" data-id="${doc.id}" data-filename="${doc.filename}">Summary</button>
         </div>
         <div style="font-size:11px;color:var(--text-tertiary)">${new Date(doc.created_at).toLocaleDateString()}</div>
       </div>`).join('');
 
-    document.querySelectorAll('.qa-btn').forEach(btn => btn.addEventListener('click', () => { currentDocId = btn.dataset.id; document.getElementById('qaModal').style.display='flex'; document.getElementById('qaQuestion').value=''; document.getElementById('qaAnswer').style.display='none'; }));
-    document.querySelectorAll('.delete-doc-btn').forEach(btn => btn.addEventListener('click', async () => { if(!await confirmDialog('Delete this document?')) return; await fetch(`${API_BASE}/documents/${btn.dataset.id}`,{method:'DELETE'}); loadDocuments(); toast('Document deleted', 'info'); }));
+    // Q&A button handlers
+    document.querySelectorAll('.qa-btn').forEach(btn => btn.addEventListener('click', () => {
+      currentDocId = btn.dataset.id;
+      document.getElementById('qaModal').style.display='flex';
+      document.getElementById('qaQuestion').value='';
+      document.getElementById('qaAnswer').style.display='none';
+    }));
+
+    // Delete button handlers
+    document.querySelectorAll('.delete-doc-btn').forEach(btn => btn.addEventListener('click', async () => {
+      if(!await confirmDialog('Delete this document?')) return;
+      await fetch(`${API_BASE}/documents/${btn.dataset.id}`,{method:'DELETE'});
+      loadDocuments();
+      toast('Document deleted', 'info');
+    }));
+
+    // Summary button handlers
     document.querySelectorAll('.summary-btn').forEach(btn => btn.addEventListener('click', async () => {
-      btn.disabled=true; btn.textContent='Summarizing…';
-      try { const res = await fetch(`${API_BASE}/documents/${btn.dataset.id}/summary`,{method:'POST'}); const data = await res.json(); toast(data.summary||'No summary available', 'info', 8000); }
-      catch(e) { toast('Error: '+e.message, 'error'); }
-      finally { btn.disabled=false; btn.textContent='Summary'; }
+      currentDocId = btn.dataset.id;
+      currentDocFilename = btn.dataset.filename;
+
+      // Show loading state in modal
+      summaryDocTitle.textContent = `Summary: ${currentDocFilename}`;
+      summaryContent.textContent = 'Generating summary…';
+      summaryModal.style.display = 'flex';
+
+      // Disable the summary button to prevent multiple clicks
+      btn.disabled = true;
+      btn.textContent = 'Summarizing…';
+
+      try {
+        const res = await fetch(`${API_BASE}/documents/${currentDocId}/summary`,{method:'POST'});
+        const data = await res.json();
+        summaryContent.textContent = data.summary || 'No summary available.';
+      } catch(e) {
+        summaryContent.textContent = 'Error: ' + e.message;
+        toast('Error generating summary: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Summary';
+      }
     }));
   }
 
   document.getElementById('dropZone').addEventListener('click', () => document.getElementById('fileInput').click());
-  document.getElementById('fileInput').addEventListener('change', async e => { for(const f of Array.from(e.target.files)) await uploadFile(f); e.target.value=''; });
-  document.getElementById('dropZone').addEventListener('dragover', e => { e.preventDefault(); document.getElementById('dropZone').classList.add('dragover'); });
+  document.getElementById('fileInput').addEventListener('change', async e => {
+    for(const f of Array.from(e.target.files)) await uploadFile(f);
+    e.target.value='';
+  });
+  document.getElementById('dropZone').addEventListener('dragover', e => {
+    e.preventDefault();
+    document.getElementById('dropZone').classList.add('dragover');
+  });
   document.getElementById('dropZone').addEventListener('dragleave', () => document.getElementById('dropZone').classList.remove('dragover'));
-  document.getElementById('dropZone').addEventListener('drop', async e => { e.preventDefault(); document.getElementById('dropZone').classList.remove('dragover'); for(const f of Array.from(e.dataTransfer.files)) await uploadFile(f); });
+  document.getElementById('dropZone').addEventListener('drop', async e => {
+    e.preventDefault();
+    document.getElementById('dropZone').classList.remove('dragover');
+    for(const f of Array.from(e.dataTransfer.files)) await uploadFile(f);
+  });
 
   async function uploadFile(file) {
-    if (file.size > 50*1024*1024) { toast(`${file.name} is too large (max 50 MB)`, 'error'); return; }
-    const fd = new FormData(); fd.append('file', file);
+    if (file.size > 50*1024*1024) {
+      toast(`${file.name} is too large (max 50 MB)`, 'error');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
     const zone = document.getElementById('dropZone');
     zone.classList.add('uploading');
     const pending = toast(`Uploading ${file.name}…`, 'info', 60000);
     try {
       const res = await fetch(`${API_BASE}/documents/upload`,{method:'POST',body:fd});
       pending.remove();
-      if(res.ok) { loadDocuments(); toast(`Uploaded ${file.name}`, 'ok'); }
-      else { toast(`Failed to upload ${file.name}`, 'error'); }
+      if(res.ok) {
+        loadDocuments();
+        toast(`Uploaded ${file.name}`, 'ok');
+      }
+      else {
+        toast(`Failed to upload ${file.name}`, 'error');
+      }
     }
-    catch(e) { pending.remove(); toast('Error: '+e.message, 'error'); }
-    finally { zone.classList.remove('uploading'); }
+    catch(e) {
+      pending.remove();
+      toast('Error: '+e.message, 'error');
+    }
+    finally {
+      zone.classList.remove('uploading');
+    }
   }
 
   document.querySelectorAll('.close-modal').forEach(btn => btn.addEventListener('click', () => document.getElementById('qaModal').style.display='none'));
-  document.getElementById('qaModal').addEventListener('click', e => { if(e.target===document.getElementById('qaModal')) document.getElementById('qaModal').style.display='none'; });
+  document.getElementById('qaModal').addEventListener('click', e => {
+    if(e.target===document.getElementById('qaModal'))
+      document.getElementById('qaModal').style.display='none';
+  });
 
   document.getElementById('askBtn').addEventListener('click', async () => {
     const query = document.getElementById('qaQuestion').value.trim();
     if (!query) return;
     const btn = document.getElementById('askBtn');
-    btn.disabled=true; btn.textContent='Asking…';
+    btn.disabled=true;
+    btn.textContent='Asking…';
     try {
-      const res = await fetch(`${API_BASE}/documents/${currentDocId}/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query})});
+      const res = await fetch(`${API_BASE}/documents/${currentDocId}/ask`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query})
+      });
       const data = await res.json();
       const el = document.getElementById('qaAnswer');
       el.textContent = data.answer || 'No answer found.';
       el.style.display = 'block';
-    } catch(e) { toast('Error: '+e.message, 'error'); }
-    finally { btn.disabled=false; btn.textContent='Ask'; }
+    } catch(e) {
+      toast('Error: '+e.message, 'error');
+    }
+    finally {
+      btn.disabled=false;
+      btn.textContent='Ask';
+    }
   });
 
   loadDocuments();

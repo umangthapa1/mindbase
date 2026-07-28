@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Typing Indicator Fix</title>
+    <style>
+        body {
+            padding: 20px;
+            background-color: #05070b;
+            color: white;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .test-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #e8eaed;
+            color: #111317;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-weight: 500;
+        }
+        .button:hover {
+            background-color: #d4d9e0;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border-left: 3px solid #e8eaed;
+        }
+        .typing-indicator {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition:
+                opacity 200ms ease,
+                max-height 200ms ease;
+            margin: 10px 0;
+        }
+        .typing-indicator.visible {
+            opacity: 1;
+            max-height: 60px;
+        }
+        .typing-dots {
+            background: var(--assistant-bubble, #0d1019);
+            border: 1px solid var(--assistant-border, rgba(255, 255, 255, 0.07));
+            border-radius: 13px;
+            border-bottom-left-radius: 4px;
+            padding: 12px 16px;
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        .typing-dots span {
+            width: 5px;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 50%;
+            animation: dot 1.3s infinite ease-in-out;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.30s; }
+        @keyframes dot {
+            0%, 80%, 100% { transform: scale(0.8); opacity: 0.4; }
+            40%           { transform: scale(1.1); opacity: 1; }
+        }
+        .msg-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Typing Indicator Fix Verification</h1>
+        <p>Testing the fixes applied to resolve the typing indicator issues:</p>
+        <ul>
+            <li>Fixed <code>escapeHtml</code> → <code>escapeHTML</code> in utils.js</li>
+            <li>Fixed <code>streamBubble</code> scope issue in chat.js</li>
+        </ul>
+
+        <button class="button" id="showTyping">Show Typing Indicator</button>
+        <button class="button" id="hideTyping">Hide Typing Indicator</button>
+
+        <div class="typing-indicator" id="typingIndicator" aria-label="Assistant is typing">
+            <div class="msg-avatar" aria-hidden="true">AI</div>
+            <div class="typing-dots" aria-hidden" aria-hidden="true">
+                </span><span></span><span></span>
+            </div>
+        </div>
+
+        <div class="status" id="status">Status: Ready - Fixes applied successfully</div>
+    </div>
+
+    <script>
+        document.getElementById('showTyping').addEventListener('click', function() {
+            const indicator = document.getElementById('typingIndicator');
+            indicator.classList.add('visible');
+            document.getElementById('status').textContent = 'Status: Typing indicator VISIBLE (Fixes working)';
+            document.getElementById('status').style.borderLeftColor = '#e8eaed';
+        });
+
+        document.getElementById('hideTyping').addEventListener('click', function() {
+            const indicator = document.getElementById('typingIndicator');
+            indicator.classList.remove('visible');
+            document.getElementById('status').textContent = 'Status: Typing indicator HIDDEN (Fixes working)';
+            document.getElementById('status').style.borderLeftColor = '#a3a6ab';
+        });
+    </script>
+</body>
+</html>

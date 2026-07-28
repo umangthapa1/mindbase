@@ -13,6 +13,8 @@ from __future__ import annotations
 import email
 import imaplib
 import json
+import logging
+import os
 import re
 from datetime import datetime
 from email.header import decode_header, make_header
@@ -24,7 +26,18 @@ from sqlalchemy.orm import Session
 from config import BASE_DIR
 from database import EmailDB
 
+logger = logging.getLogger(__name__)
+
 CONFIG_PATH = BASE_DIR / "data" / "email_config.json"
+
+
+def _restrict_perms() -> None:
+    """Tighten email_config.json to owner-only (0600) — it holds the IMAP password."""
+    try:
+        if CONFIG_PATH.exists():
+            os.chmod(CONFIG_PATH, 0o600)
+    except OSError as e:
+        logger.warning("Could not restrict email_config.json perms: %s", e)
 
 # IMAP host auto-detection by email domain. Covers the common providers; users
 # on anything else can still connect if their provider uses one of these, and
@@ -58,12 +71,14 @@ class ImapService:
             try:
                 self.config = json.loads(CONFIG_PATH.read_text())
             except Exception as e:
-                print(f"Email: failed to load saved config: {e}")
+                logger.warning("Email: failed to load saved config: %s", e)
                 self.config = {}
+        _restrict_perms()
 
     def _save_config(self) -> None:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(json.dumps(self.config))
+        _restrict_perms()
 
     def is_connected(self) -> bool:
         return bool(self.config.get("email") and self.config.get("password"))
@@ -186,7 +201,7 @@ class ImapService:
                 "is_unread": is_unread,
             }
         except Exception as e:
-            print(f"Email: failed to parse message {num!r}: {e}")
+            logger.warning("Email: failed to parse message %r: %s", num, e)
             return None
 
     @staticmethod

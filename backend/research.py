@@ -3,14 +3,14 @@ import logging
 import re
 from typing import AsyncGenerator, Dict, List, Optional
 
-from ollama import ollama_client
+from ollama import ollama_client, OllamaError
 from memory import memory_manager
 
 logger = logging.getLogger(__name__)
 
 
 class ResearchAgent:
-    # FIX 12: Cache model name to avoid redundant calls on concurrent requests
+    # Cached so concurrent research requests don't each re-resolve the model name.
     _model_cache: Optional[str] = None
 
     async def _get_model(self) -> str:
@@ -18,8 +18,8 @@ class ResearchAgent:
             self._model_cache = await ollama_client.get_model()
         return self._model_cache
 
-    # FIX 10: Centralized LLM call with timeout so Ollama can't hang forever
     async def _safe_generate(self, model: str, messages: List[Dict], **kwargs) -> str:
+        """LLM call with a 60s ceiling so a hung Ollama can't pin a request forever."""
         try:
             return await asyncio.wait_for(
                 ollama_client.generate(model, messages, **kwargs),
@@ -31,7 +31,7 @@ class ResearchAgent:
     async def research(
         self,
         query: str,
-        max_subqueries: int = 5,  # FIX 8: renamed from max_steps — this limits sub-questions, not steps
+        max_subqueries: int = 5,
     ) -> AsyncGenerator[Dict, None]:
         """
         Async generator — must be consumed with `async for`, not `await`.
@@ -50,7 +50,6 @@ class ResearchAgent:
         all_findings = []
 
         for i, sub_query in enumerate(queries):
-            # FIX 11: Added progress percentage to step yields
             yield {
                 "type": "step",
                 "number": i + 1,
@@ -66,7 +65,6 @@ class ResearchAgent:
                 "findings": findings
             })
 
-            # FIX 2: Yield all findings (was [:3]) to match what gets saved to report ([:5])
             yield {
                 "type": "findings",
                 "query": sub_query,
@@ -95,7 +93,6 @@ class ResearchAgent:
                 if m.get("relevance", 0) >= 0.4:
                     parts.append(m["content"][:200])
         except Exception as e:
-            # FIX 6: Log instead of silently swallowing
             logger.warning("Could not load user context: %s", e)
         return "\n".join(parts[:8])
 
@@ -110,13 +107,9 @@ Main question: {query}
 
 Output ONLY numbered sub-questions, one per line (e.g. "1. ...")."""
 
-        # FIX 10: Use _safe_generate with timeout
         response = await self._safe_generate(
             model, [{"role": "user", "content": prompt}], temperature=0.4
         )
-
-        if response.lstrip().startswith("[Error:"):
-            raise RuntimeError(response.strip())
 
         lines = response.strip().split("\n")
         questions = []
@@ -137,14 +130,12 @@ Sub-topic: {topic}
 
 Bullets:"""
 
-        # FIX 10: Use _safe_generate with timeout
-        response = await self._safe_generate(
-            model, [{"role": "user", "content": prompt}], temperature=0.5
-        )
-
-        # FIX 7: Check for LLM error response (was only done in _decompose_query)
-        if response.lstrip().startswith("[Error:"):
-            logger.warning("LLM error in _research_subtopic for topic: %s", topic)
+        try:
+            response = await self._safe_generate(
+                model, [{"role": "user", "content": prompt}], temperature=0.5
+            )
+        except OllamaError as e:
+            logger.warning("LLM error in _research_subtopic for topic %r: %s", topic, e)
             return []
 
         findings = []
@@ -153,9 +144,9 @@ Bullets:"""
             if line and (line.startswith('-') or line.startswith('•') or line[0].isdigit()):
                 findings.append(line.lstrip('-•0123456789. '))
 
-        # FIX 3: Guard against blank fallback when response is empty/whitespace
         if findings:
             return findings[:5]
+        # Fall back to the first slice of the raw response when no bullet lines were found.
         fallback = response.strip()[:200]
         return [fallback] if fallback else []
 
@@ -178,25 +169,21 @@ Write a comprehensive report with:
 
 Format with markdown headers."""
 
-        # FIX 9: Lowered temperature from 0.6 to 0.3 for consistent structured output
-        # FIX 10: Use _safe_generate with timeout
-        content = await self._safe_generate(
-            model,
-            [{"role": "user", "content": prompt}],
-            temperature=0.3,
-            num_predict=4096
-        )
-
-        # FIX 7: Check for LLM error in report generation
-        if content.lstrip().startswith("[Error:"):
-            logger.warning("LLM error during report generation for query: %s", original_query)
+        try:
+            content = await self._safe_generate(
+                model,
+                [{"role": "user", "content": prompt}],
+                temperature=0.3,
+                num_predict=4096
+            )
+        except OllamaError as e:
+            logger.warning("LLM error during report generation for query %r: %s", original_query, e)
             content = "Report generation failed. Please try again."
 
         sections = []
         current_section = None
 
         for line in content.split('\n'):
-            # FIX 4: Handle #, ##, and ### headers (was only ##)
             if line.startswith('#'):
                 if current_section:
                     sections.append(current_section)
@@ -219,8 +206,6 @@ Format with markdown headers."""
 
     async def save_report_to_note(self, report: Dict, db_session) -> str:
         from database import NoteDB
-        # FIX 5: Removed redundant `from memory import memory_manager` —
-        # memory_manager is already imported at the top of this file
 
         note = NoteDB(
             title=f"Research: {report['title']}",

@@ -22,19 +22,20 @@
   --text-secondary: rgba(255, 255, 255, 0.45);
   --text-tertiary: rgba(255, 255, 255, 0.25);
 
-  --user-bubble: #1a1f30;
+  --user-bubble: #181a1f;
   --user-border: rgba(255, 255, 255, 0.12);
   --assistant-bubble: #0d1019;
   --assistant-border: rgba(255, 255, 255, 0.07);
 
-  /* One restrained accent to add hierarchy to an otherwise monochrome UI */
-  --accent: #6d7cff;
-  --accent-soft: rgba(109, 124, 255, 0.16);
-  --accent-border: rgba(109, 124, 255, 0.40);
-  --accent-ring: rgba(109, 124, 255, 0.55);
+  /* Monochrome accent: white/light-grey for hierarchy without color */
+  --accent: #e8eaed;
+  --accent-soft: rgba(255, 255, 255, 0.10);
+  --accent-border: rgba(255, 255, 255, 0.28);
+  --accent-ring: rgba(255, 255, 255, 0.45);
 
-  --ok: #4ec9a3;
-  --danger: #e5707a;
+  --ok: #d8dadd;
+  --warning: #b9bcc1;
+  --danger: #a3a6ab;
 
   --glass-bg: rgba(10, 13, 20, 0.75);
   --glass-border: rgba(255, 255, 255, 0.08);
@@ -62,7 +63,7 @@ html, body {
 /* Faint atmospheric glow so the workspace reads with depth, not flat black */
 body {
   background:
-    radial-gradient(1000px 480px at 50% -8%, rgba(109, 124, 255, 0.05), transparent 70%),
+    radial-gradient(1000px 480px at 50% -8%, rgba(255, 255, 255, 0.03), transparent 70%),
     var(--bg-void);
 }
 
@@ -511,8 +512,8 @@ textarea:focus-visible,
 }
 
 #modelSelector option {
-  background: #111827;
-  color: #fff;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }
 
 /* ── Messages area ── */
@@ -644,6 +645,9 @@ textarea:focus-visible,
   font-size: 13.5px;
   font-weight: 300;
   letter-spacing: 0.005em;
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .message.user .msg-bubble {
@@ -697,6 +701,7 @@ textarea:focus-visible,
   color: rgba(255, 255, 255, 0.6);
   text-decoration: underline;
   text-underline-offset: 2px;
+  word-break: break-all;
 }
 
 .msg-bubble a:hover {
@@ -1027,7 +1032,7 @@ button {
 
 .btn-confirm-yes {
   background: var(--danger);
-  color: #1a0d0f;
+  color: #111317;
   font-weight: 500;
 }
 
@@ -1155,7 +1160,7 @@ button {
 .confirm-actions .confirm-ok.is-danger {
   background: var(--danger);
   border-color: transparent;
-  color: #1a0d0f;
+  color: #111317;
   font-weight: 500;
 }
 

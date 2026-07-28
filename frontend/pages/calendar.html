@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Calendar — Mindbase</title>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260623">
-  <link rel="stylesheet" href="page-theme.css?v=20260623">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
     .cal-day-name { font-size:10px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-tertiary); text-align:center; padding:6px 0; }
@@ -31,7 +31,7 @@
   </style>
 </head>
 <body>
-<script src="../js/dock.js?v=20260623"></script>
+<script src="../js/dock.js?v=20260728"></script>
 <div class="page-root">
 
   <header class="page-header">
@@ -133,7 +133,7 @@
       if (isToday) cell.classList.add('today');
       if (isSel) cell.classList.add('selected');
       const items = itemsOnDay(viewYear, viewMonth, d);
-      const dotColors = ['rgba(167,139,250,0.8)','rgba(251,191,36,0.8)','rgba(74,222,128,0.8)'];
+      const dotColors = ['rgba(220,220,220,0.8)','rgba(180,180,180,0.8)','rgba(140,140,140,0.8)'];
       const dots = items.slice(0,3).map((it,i) => `<span class="cal-dot" style="background:${it.type==='task'?dotColors[1]:dotColors[0]}"></span>`).join('');
       cell.innerHTML = `<div class="cal-num">${d}</div><div style="display:flex;gap:3px;flex-wrap:wrap">${dots}</div>${items.length>3?`<div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">+${items.length-3}</div>`:''}`;
       cell.addEventListener('click', () => { selectedDate = {y:viewYear,m:viewMonth,d}; renderGrid(); showDay(selectedDate); });
@@ -149,7 +149,7 @@
     if (!items.length) { el.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px">Nothing scheduled.</div>'; return; }
     el.innerHTML = items.map(it => {
       const time = new Date(it.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-      const type = it.type==='task' ? `<span style="color:rgba(251,191,36,0.8)">task</span>` : `<span style="color:rgba(167,139,250,0.8)">event</span>`;
+      const type = it.type==='task' ? `<span style="color:rgba(210,210,210,0.8)">task</span>` : `<span style="color:rgba(150,150,150,0.8)">event</span>`;
       const del = it.type==='event' ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:11px" data-del="${it.id}">Delete</button>` : '';
       return `<div class="day-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div class="day-item-title">${it.title}</div><div class="day-item-meta">${type} · ${time}</div></div>${del}</div></div>`;
     }).join('');

@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (counter) {
             if (count > 8000) {
                 counter.textContent = `${count.toLocaleString()} / 10,000`;
-                counter.style.color = count > 9500 ? 'var(--color-error, #f87171)' : 'var(--text-tertiary)';
+                counter.style.color = count > 9500 ? 'var(--danger)' : 'var(--text-tertiary)';
                 counter.style.display = 'block';
             } else {
                 counter.style.display = 'none';
