@@ -87,3 +87,11 @@ backend/                  FastAPI (async)
 ## License
 
 Personal/local project. No upstream license declared.
+
+## Recent UI improvements (July 2026)
+
+- Enhanced keyboard focus visibility with added depth for better accessibility.
+- Improved stat card interactions with hover lift and active press feedback.
+- Enlarged dock items for easier touch targeting and refined hover animation.
+- Refined toast notifications with increased padding and polished entrance/exit animations.
+- Added subtle glow effect to active dock items for stronger navigation feedback.
