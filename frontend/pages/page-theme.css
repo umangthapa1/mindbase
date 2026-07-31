@@ -360,12 +360,22 @@ select option { background: var(--bg-elevated); }
   border-radius: 12px;
   padding: 18px 20px;
   box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.6);
-  transition: border-color 180ms var(--ease), transform 180ms var(--ease);
+  transition:
+    border-color 180ms var(--ease),
+    transform 180ms var(--ease),
+    box-shadow 180ms var(--ease);
 }
 
 .stat-card:hover {
   border-color: var(--border-mid);
   transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 12px 28px -10px rgba(0, 0, 0, 0.7);
+}
+
+.stat-card:active {
+  transform: translateY(0);
 }
 
 /* Accent hairline along the top edge */
