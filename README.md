@@ -1,97 +1,270 @@
-# Mindbase
+# Mindbase AI Workspace
 
-A local-first AI workspace. FastAPI backend + vanilla-JS SPA frontend, powered by a local Ollama model, with ChromaDB vector memory, SQLite storage, document Q&A, offline research, tasks/calendar with natural-language scheduling, and IMAP email integration. Everything runs on your machine — no cloud, no API keys to a third party.
+A comprehensive local-first AI workspace that combines a FastAPI backend with a vanilla-JS SPA frontend, powered by local Ollama models. Features include ChromaDB vector memory, SQLite storage, document Q&A, offline research, tasks/calendar with natural-language scheduling, and IMAP email integration - all running entirely on your machine with no cloud dependencies or third-party API keys.
 
-## Quick start
+## Table of Contents
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Prerequisites](#prerequisites)
+- [Configuration](#configuration)
+- [Project Structure](#project-structure)
+- [Backend Documentation](#backend-documentation)
+- [Frontend Documentation](#frontend-documentation)
+- [Development Guidelines](#development-guidelines)
+- [Testing](#testing)
+- [License](#license)
 
-```bash
-./start.sh
+## Features
+
+### Core AI Capabilities
+- **Local LLM Integration**: Works with any Ollama model (default: mistral)
+- **Vector Memory**: ChromaDB-backed long-term memory for context retention
+- **Document Intelligence**: Upload, process, and query documents with local embeddings
+- **Offline Research Agent**: Multi-step research capability without internet
+- **Natural Language Processing**: Understand and execute complex requests
+
+### Productivity Tools
+- **Email Integration**: Full IMAP support for Gmail and other email providers
+- **Task Management**: Create, schedule, and track tasks with natural language
+- **Calendar Integration**: Calendar view with task/event synchronization
+- **Notes System**: Rich text notes with tagging and memory integration
+- **Research Assistant**: Deep research capabilities with automatic note saving
+
+### Communication & Collaboration
+- **Real-time Chat**: Streaming responses with context awareness
+- **Model Switching**: Change AI models on-the-fly without restart
+- **Conversation History**: Persistent chat history with search
+- **Multi-modal Support**: Handle text, documents, and email content
+
+### Security & Privacy
+- **100% Local**: All data stays on your machine
+- **No Third-party APIs**: Zero reliance on external AI services
+- **Secure Credentials**: Email passwords stored locally with restricted permissions
+- **Open Design**: Transparent codebase with clear data flow
+
+## Architecture
+
+Mindbase follows a clean separation between frontend and backend:
+
+```
+mindbase/
+├── backend/                  # FastAPI application (Python)
+│   ├── main.py              # Application entrypoint and API routes
+│   ├── config.py            # Configuration and environment variables
+│   ├── database.py          # SQLAlchemy models and database management
+│   ├── ollama.py            # Ollama client for LLM interactions
+│   ├── intelligence.py      # Chat orchestration and context handling
+│   ├── memory.py            # Long-term memory management (ChromaDB)
+│   ├── documents.py         # Document processing and Q&A system
+│   ├── tasks_service.py     # Task and calendar management
+│   ├── research.py          # Offline research agent
+│   ├── imap_service.py      # Email synchronization (IMAP)
+│   └── models.py            # Pydantic models for API requests/responses
+│
+├── frontend/                # Vanilla JavaScript SPA
+│   ├── index.html           # Main application shell
+│   ├── pages/               # Individual page views
+│   ├── css/                 # Stylesheets and design tokens
+│   └── js/                  # Application logic and utilities
+│
+├── data/                    # Persistent storage (gitignored)
+│   ├── workspace.db         # SQLite database
+│   ├── chroma/              # ChromaDB vector store
+│   └── email_config.json    # Email credentials (chmod 600)
+│
+└── uploads/                 # Document uploads (gitignored)
 ```
 
-The script checks that Ollama is reachable, creates a `venv/`, installs `backend/requirements.txt`, and starts uvicorn with `--reload`. Open <http://localhost:8000>.
+### Data Flow
+1. **Frontend**: User interacts with vanilla-JS SPA
+2. **API Layer**: Requests sent to FastAPI backend via `/api/*` endpoints
+3. **Backend Services**: 
+   - Route handlers in `main.py` delegate to specialized services
+   - Services process requests using local resources (Ollama, DB, ChromaDB)
+   - Background tasks handle email sync, research, etc.
+4. **Storage**: 
+   - Structured data in SQLite (`workspace.db`)
+   - Vector embeddings in ChromaDB (`data/chroma/`)
+   - File uploads in `uploads/`
+   - Email credentials in `data/email_config.json`
 
-### Prerequisites
-
-- **Python 3.10+**
-- **[Ollama](https://ollama.com)** running locally (`ollama serve`) with at least one chat model pulled:
-  ```bash
-  ollama pull mistral          # default model
-  ollama pull nomic-embed-text # required for document/memory embeddings
-  ```
-
-On Windows use `start.bat` instead of `start.sh`.
-
-### Manual run
+## Quick Start
 
 ```bash
+# Clone and enter directory
+git clone <repository-url>
+cd WorkSpaceMainFiles
+
+# Choose your startup method:
+# Linux/macOS:
+./start.sh
+
+# Windows:
+start.bat
+```
+
+The startup script will:
+1. Verify Ollama is running locally
+2. Create a Python virtual environment (`venv/`)
+3. Install required Python packages
+4. Start the FastAPI server with auto-reload
+5. Open the application in your default browser at `http://localhost:8000`
+
+## Prerequisites
+
+- **Python 3.10+** (3.11+ recommended)
+- **[Ollama](https://ollama.com)** installed and running locally
+- **Required Ollama models**:
+  ```bash
+  ollama pull mistral          # Default chat model
+  ollama pull nomic-embed-text # Required for document/memory embeddings
+  ```
+
+### Manual Setup
+
+If you prefer to set up manually:
+
+```bash
+# Create virtual environment
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
 pip install -r backend/requirements.txt
+
+# Start the server
 cd backend
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ## Configuration
 
-All settings are optional — sensible defaults work for a single-user local install. Copy `backend/.env.example` to `backend/.env` and override as needed:
+All configuration is optional with sensible defaults. To customize:
 
-| Variable        | Default                  | Purpose                                                      |
-|-----------------|--------------------------|--------------------------------------------------------------|
-| `OLLAMA_HOST`   | `http://localhost:11434` | Ollama server URL                                            |
-| `DEFAULT_MODEL` | `mistral`                | Fallback chat model when none is selected                    |
-| `API_HOST`      | `127.0.0.1`              | Bind address for the API server                              |
-| `API_PORT`      | `8000`                   | API server port                                              |
-| `CORS_ORIGINS`  | *(unset → wildcard)*     | Comma-separated allow-list, e.g. `http://localhost:8000`. When set, credentials are allowed; when unset, a permissive wildcard is used **without** credentials (the only valid combination for `*`). |
+1. Copy `backend/.env.example` to `backend/.env`
+2. Edit the `.env` file to override defaults:
 
-Email credentials are stored separately in `backend/data/email_config.json` (chmod `0600`, owner-only). The IMAP password is the only sensitive value the app persists; it is **not** encrypted at rest — if that matters to you, keep the file's permissions tight and don't sync `data/` to shared storage.
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+| `DEFAULT_MODEL` | `mistral` | Fallback chat model |
+| `API_HOST` | `127.0.0.1` | API server bind address |
+| `API_PORT` | `8000` | API server port |
+| `CORS_ORIGINS` | *(unset)* | Comma-separated allow-list for CORS |
 
-## Architecture
+Email credentials are stored in `backend/data/email_config.json` with file permissions set to `600` (owner-only read/write).
 
+## Project Structure
+
+For detailed documentation of each file, see the `docs/` folder:
+- [Backend File Documentation](./docs/backend/)
+- [Frontend File Documentation](./docs/frontend/)
+
+## Backend Documentation
+
+The backend consists of these key modules:
+
+### Core Application
+- **[main.py](./docs/backend/main.py.md)**: Main FastAPI application with all API routes
+- **[config.py](./docs/backend/config.py.md)**: Environment configuration and path constants
+- **[database.py](./docs/backend/database.py.md)**: SQLAlchemy setup, models, and migrations
+- **[models.py](./docs/backend/models.py.md)**: Pydantic models for request/validation
+
+### AI Services
+- **[ollama.py](./docs/backend/ollama.py.md)**: Client for communicating with local Ollama instance
+- **[intelligence.py](./docs/backend/intelligence.py.md)**: Chat orchestration, context gathering, and prompt engineering
+- **[memory.py](./docs/backend/memory.py.md)**: Long-term memory management using ChromaDB
+- **[documents.py](./docs/backend/documents.py.md)**: Document processing, embedding, and Q&A system
+- **[research.py](./docs/backend/research.py.md)**: Offline multi-step research agent
+
+### Productivity Services
+- **[tasks_service.py](./docs/backend/tasks_service.py.md)**: Task management, calendar, and natural language date parsing
+- **[imap_service.py](./docs/backend/imap_service.py.md)**: IMAP email synchronization (SSL/TLS support)
+
+### Supporting Modules
+- Various utility modules and test files
+
+## Frontend Documentation
+
+The frontend is a vanilla JavaScript SPA with no build framework:
+
+### Application Structure
+- **[index.html](./docs/frontend/index.html.md)**: Main application shell containing the chat interface
+- **[pages/](./docs/frontend/pages/)**: Individual HTML pages for different views:
+  - [dashboard.html](./docs/frontend/pages/dashboard.html.md): Overview dashboard
+  - [tasks.html](./docs/frontend/pages/tasks.html.md): Task management interface
+  - [calendar.html](./docs/frontend/pages/calendar.html.md): Calendar view
+  - [email.html](./docs/frontend/pages/email.html.md): Email client interface
+  - [notes.html](./docs/frontend/pages/notes.html.md): Notes creation and management
+  - [memory.html](./docs/frontend/pages/memory.html.md): Memory/browser interface
+  - [research.html](./docs/frontend/pages/research.html.md): Research agent controls
+  - [agents.html](./docs/frontend/pages/agents.html.md): AI agent configuration
+  - [settings.html](./docs/frontend/pages/settings.html.md): Application settings
+  - [agents.html](./docs/frontend/pages/agents.html.md): AI agent configuration
+
+### Static Assets
+- **[css/globals.css](./docs/frontend/css/globals.css.md)**: CSS variables (design tokens) and base styles
+- **[css/page-theme.css](./docs/frontend/css/page-theme.css.md)**: Shared chrome for all pages
+- **[js/](./docs/frontend/js/)**: JavaScript modules:
+  - [api.js](./docs/frontend/js/api.js.md): Wrapper for backend API calls
+  - [app.js](./docs/frontend/js/app.js.md): Main application logic and routing
+  - [chat.js](./docs/frontend/js/chat.js.md): Chat interface functionality
+  - [dock.js](./docs/frontend/js/dock.js.md): Application dock/navigation
+  - [email.js](./docs/frontend/js/email.js.md): Email-specific functionality
+  - [toast.js](./docs/frontend/js/toast.js.md): Notification system
+  - [utils.js](./docs/frontend/js/utils.js.md): Utility functions and helpers
+  - [chat.js](./docs/frontend/js/chat.js.md): Chat message handling
+
+## Development Guidelines
+
+### Backend Practices
+- **Logging**: Use `logging.getLogger(__name__)` in all modules, never `print()`
+- **Async/Sync Balance**: FastAPI is async but SQLAlchemy is sync - offload DB calls with `asyncio.to_thread()`
+- **Error Handling**: Ollama client raises exceptions - catch `OllamaError` for soft failures
+- **Database Changes**: Modify `database.py::_migrate_sqlite()` with idempotent `ALTER TABLE` statements
+- **CORS**: Never use `allow_origins=["*"]` with `allow_credentials=True`
+
+### Frontend Practices
+- **Styling**: Use CSS variables from `globals.css` - avoid hardcoded colors
+- **No Build Step**: Plain JavaScript - no transpilation or bundling
+- **Design Tokens**: All colors come from CSS `:root` variables
+- **Cache Busting**: Update `?v=` query parameters when changing CSS/JS files
+- **Accessibility**: Maintain proper color contrast and focus indicators
+
+## Testing
+
+Run the test suite to verify functionality:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Install test dependencies
+pip install -r backend/requirements-dev.txt
+
+# Run tests
+pytest backend/tests/
 ```
-frontend/                 Vanilla-JS SPA (no build step)
-  index.html              Chat shell + model selector
-  pages/*.html            Tasks, calendar, documents, email, memory,
-                          notes, research, agents, settings, dashboard
-  css/globals.css         Design tokens + base theme
-  pages/page-theme.css    Shared page chrome
-  js/                     api.js (fetch wrapper), chat.js, app.js, dock.js, ...
 
-backend/                  FastAPI (async)
-  main.py                 Routes, request models, SSE chat streaming, lifespan
-  config.py               Env-driven settings + path constants
-  database.py             SQLAlchemy models + _migrate_sqlite() + get_db()
-  ollama.py               Ollama HTTP client (chat, embeddings, pull, health)
-  intelligence.py         Chat orchestration: context retrieval, intent, prompts
-  memory.py               ChromaDB-backed long-term memory + note upserts
-  documents.py            Upload, chunk, embed, vector search, Q&A, summaries
-  tasks_service.py        Tasks + calendar + NL date parsing + chat scheduling
-  research.py             Offline multi-step research agent
-  imap_service.py         IMAP inbox sync (stdlib only, no OAuth)
-  models.py               Pydantic request/response models
-```
-
-**Storage**
-- `data/workspace.db` — SQLite (conversations, messages, notes, tasks, events, emails).
-- `data/chroma/` — ChromaDB persistent vector store (documents, memories).
-- `uploads/` — original uploaded documents.
-
-**Request flow (chat):** `POST /api/chat/messages` (SSE) → `intelligence.prepare_chat` gathers memory + document + schedule context → Ollama streams the reply token-by-token; side effects (task/event creation) run on the same turn.
-
-## Development notes
-
-- The backend is async FastAPI but uses **synchronous SQLAlchemy**. DB calls inside async routes should be offloaded with `asyncio.to_thread(...)` (or Starlette's `run_in_threadpool`) so they don't block the event loop — see `CLAUDE.md` for the established patterns.
-- Schema changes go through `database.py::_migrate_sqlite()` (ad-hoc `ALTER TABLE`); there is no Alembic migration tooling yet.
-- Logging uses the stdlib `logging` module — every backend module declares `logger = logging.getLogger(__name__)`. Avoid `print()`.
-- Tests: `pip install -r backend/requirements-dev.txt && pytest backend/tests/` runs the smoke tests (NL date parsing in `tasks_service.py`, memory upsert edge cases). See `CLAUDE.md` for conventions.
+### Test Categories
+- **Unit Tests**: Individual function testing in `backend/tests/`
+- **Manual Verification**: Standalone scripts like `backend/test.py` and `backend/test_scheduling.py`
+- **Integration**: Full system testing through manual use
 
 ## License
 
-Personal/local project. No upstream license declared.
+Mindbase is a personal/local project. No external license is declared - it's intended for individual use and learning purposes.
 
-## Recent UI improvements (July 2026)
+## Acknowledgments
 
-- Enhanced keyboard focus visibility with added depth for better accessibility.
-- Improved stat card interactions with hover lift and active press feedback.
-- Enlarged dock items for easier touch targeting and refined hover animation.
-- Refined toast notifications with increased padding and polished entrance/exit animations.
-- Added subtle glow effect to active dock items for stronger navigation feedback.
+Built with:
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern, fast web framework
+- [Ollama](https://ollama.com/) - Local LLM runner
+- [ChromaDB](https://www.trychroma.com/) - AI-native vector database
+- [SQLAlchemy](https://www.sqlalchemy.org/) - Python SQL toolkit
+- [VanillaJS](https://vanilla-js.com/) - Plain JavaScript for frontend
+
+---
+
+*Documentation generated automatically. For the most current information, see the source code and CLAUDE.md.*
