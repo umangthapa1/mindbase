@@ -4,13 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tasks — Mindbase</title>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <script src="../js/theme.js?v=20260802"></script>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .task-item { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:14px 16px; display:flex; align-items:flex-start; gap:12px; transition:border-color 150ms ease; }
     .task-item:hover { border-color:var(--border-mid); }
     .task-item.completed { opacity:0.5; }
-    input[type="checkbox"] { width:15px; height:15px; margin-top:1px; flex-shrink:0; accent-color:rgba(255,255,255,0.7); cursor:pointer; }
+    input[type="checkbox"] { width:15px; height:15px; margin-top:1px; flex-shrink:0; accent-color:var(--accent); cursor:pointer; }
     .priority-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; margin-top:5px; }
     .overdue-tag { font-size:10px; color:var(--danger); font-weight:400; letter-spacing:0.03em; }
   </style>
@@ -105,7 +106,7 @@
   function displayTasks(tasks) {
     const list = document.getElementById('tasksList');
     if (!tasks.length) { list.innerHTML = '<div class="empty-state">No tasks.</div>'; return; }
-    const dot = { low:'rgba(210,210,210,0.7)', medium:'rgba(165,165,165,0.7)', high:'rgba(115,115,115,0.7)' };
+    const dot = { low:'var(--text-tertiary)', medium:'var(--text-secondary)', high:'var(--text-primary)' };
     list.innerHTML = '';
     tasks.forEach(task => {
       const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completed';

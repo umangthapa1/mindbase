@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Test Typing Indicator</title>
-    <link rel="stylesheet" href="frontend/css/globals.css?v=20260728">
+    <script src="frontend/js/theme.js?v=20260802"></script>
+    <link rel="stylesheet" href="frontend/css/globals.css?v=20260802">
     <style>
         body {
             padding: 20px;
-            background-color: #05070b;
-            color: white;
+            background-color: var(--bg-void);
+            color: var(--text-primary);
             font-family: 'DM Sans', sans-serif;
         }
         .test-container {
@@ -19,8 +20,8 @@
         .button {
             display: inline-block;
             padding: 10px 20px;
-            background-color: #e8eaed;
-            color: #111317;
+            background-color: var(--bg-elevated);
+            color: var(--text-primary);
             border: none;
             border-radius: 6px;
             cursor: pointer;
@@ -28,14 +29,14 @@
             font-weight: 500;
         }
         .button:hover {
-            background-color: #d4d9e0;
+            background-color: var(--bg-hover);
         }
         .status {
             margin-top: 20px;
             padding: 15px;
-            background-color: rgba(255, 255, 255, 0.05);
+            background-color: var(--bg-surface);
             border-radius: 8px;
-            border-left: 3px solid #e8eaed;
+            border-left: 3px solid var(--accent);
         }
     </style>
 </head>

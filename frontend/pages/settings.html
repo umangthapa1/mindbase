@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Settings — Mindbase</title>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <script src="../js/theme.js?v=20260802"></script>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .setting-row { display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--border-subtle); gap:12px; }
@@ -12,7 +13,7 @@
     .setting-label { font-size:13px; font-weight:300; color:var(--text-secondary); }
     .setting-desc { font-size:11px; color:var(--text-tertiary); margin-top:2px; }
     input[type="range"] { -webkit-appearance:none; height:3px; background:var(--border-mid); border-radius:99px; outline:none; cursor:pointer; flex:1; }
-    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--accent); border:2px solid var(--bg-void); box-shadow:0 0 0 1px var(--accent-border), 0 2px 6px rgba(255,255,255,0.4); cursor:pointer; transition:transform 120ms var(--ease); }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--accent); border:2px solid var(--bg-void); box-shadow:0 0 0 1px var(--accent-border), 0 2px 6px var(--accent-soft); cursor:pointer; transition:transform 120ms var(--ease); }
     input[type="range"]::-webkit-slider-thumb:hover { transform:scale(1.15); }
     .range-val { font-size:12px; color:var(--text-tertiary); font-family:var(--mono); min-width:30px; text-align:right; }
     .about-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border-subtle); font-size:12.5px; }
@@ -52,6 +53,22 @@
       <div class="setting-row">
         <div><div class="setting-label">Max tokens</div></div>
         <input id="maxTokens" type="number" value="2048" min="100" max="10000" style="width:100px">
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Appearance</div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Theme</div>
+          <div class="setting-desc">Choose an app-wide palette.</div>
+        </div>
+        <select id="themeSelect" style="width:auto;min-width:160px">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="black-gold">Black Gold</option>
+          <option value="blue-night">Blue Night</option>
+        </select>
       </div>
     </div>
 
@@ -98,6 +115,22 @@
 <script src="../js/toast.js"></script>
 <script>
   const API_BASE = '/api';
+  const themeSelect = document.getElementById('themeSelect');
+
+  function loadTheme() {
+    const theme = window.MindbaseTheme?.getStoredTheme() || 'dark';
+    themeSelect.value = theme;
+    return theme;
+  }
+
+  function saveTheme() {
+    const theme = themeSelect.value;
+    if (window.MindbaseTheme) {
+      window.MindbaseTheme.setStoredTheme(theme);
+    } else {
+      localStorage.setItem('theme', theme);
+    }
+  }
 
   async function loadModels() {
     try {
@@ -117,6 +150,7 @@
   }
 
   function loadPrefs() {
+    loadTheme();
     document.getElementById('temperature').value = localStorage.getItem('temperature') || '0.7';
     document.getElementById('tempVal').textContent = localStorage.getItem('temperature') || '0.7';
     document.getElementById('maxTokens').value = localStorage.getItem('maxTokens') || '2048';
@@ -130,6 +164,7 @@
     localStorage.setItem('maxTokens', document.getElementById('maxTokens').value);
     localStorage.setItem('autoMemory', document.getElementById('autoMemory').checked);
     localStorage.setItem('includeMemory', document.getElementById('includeMemory').checked);
+    localStorage.setItem('theme', themeSelect.value);
   }
 
   document.getElementById('temperature').addEventListener('input', e => {
@@ -139,6 +174,8 @@
 
   ['defaultModel','maxTokens','autoMemory','includeMemory'].forEach(id =>
     document.getElementById(id).addEventListener('change', savePrefs));
+
+  themeSelect.addEventListener('change', saveTheme);
 
   document.getElementById('exportBtn').addEventListener('click', async () => {
     const data = {

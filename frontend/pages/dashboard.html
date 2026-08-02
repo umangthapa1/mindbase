@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — Mindbase</title>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <script src="../js/theme.js?v=20260802"></script>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
 </head>
 <body>
@@ -100,7 +101,7 @@
     if (!pending.length) { el.textContent = 'All caught up.'; return; }
     el.innerHTML = '';
     el.style.padding = '0';
-    const dot = { low:'rgba(210,210,210,0.7)', medium:'rgba(165,165,165,0.7)', high:'rgba(115,115,115,0.7)' };
+    const dot = { low:'var(--text-tertiary)', medium:'var(--text-secondary)', high:'var(--text-primary)' };
     pending.forEach(t => {
       const d = document.createElement('div');
       d.className = 'list-item';

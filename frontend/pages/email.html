@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Email — Mindbase</title>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <script src="../js/theme.js?v=20260802"></script>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .email-layout {
@@ -33,8 +34,8 @@
       transition: background 150ms ease;
     }
     .email-row:last-child { border-bottom: none; }
-    .email-row:hover { background: var(--bg-hover, rgba(255,255,255,0.03)); }
-    .email-row.is-selected { background: var(--bg-hover, rgba(255,255,255,0.05)); }
+    .email-row:hover { background: var(--bg-hover); }
+    .email-row.is-selected { background: var(--bg-active); }
 
     .email-row-top {
       display: flex;
@@ -188,7 +189,7 @@
 
     /* Loading shimmer lines while the summary generates */
     .summary-skeleton { display: flex; flex-direction: column; gap: 7px; }
-    .summary-skeleton span { height: 9px; border-radius: 5px; background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.14), rgba(255,255,255,0.06)); background-size: 200% 100%; animation: summaryShimmer 1.2s linear infinite; }
+    .summary-skeleton span { height: 9px; border-radius: 5px; background: linear-gradient(90deg, var(--border-subtle), var(--border-mid), var(--border-subtle)); background-size: 200% 100%; animation: summaryShimmer 1.2s linear infinite; }
     .summary-skeleton span:nth-child(2) { width: 92%; }
     .summary-skeleton span:nth-child(3) { width: 70%; }
     @keyframes summaryShimmer { to { background-position: -200% 0; } }
@@ -208,7 +209,7 @@
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: #d8dadd;
+      background: var(--accent);
       margin-right: 8px;
       vertical-align: middle;
     }
@@ -320,6 +321,7 @@
     filter: 'all', // 'all' | 'unread'
     emails: [],
     selectedId: null,
+    detailEmail: null,
   };
 
   const els = {
@@ -555,6 +557,7 @@
 
   // ── Detail ──────────────────────────────────────────────
   function renderEmptyDetail() {
+    state.detailEmail = null;
     els.emailDetailCard.innerHTML = `
       <div class="email-empty-pane">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -580,6 +583,7 @@
       const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}`);
       if (!res.ok) throw new Error(`Failed to load email: ${res.status}`);
       const email = await res.json();
+      state.detailEmail = email;
       renderEmailDetail(email);
 
       const local = state.emails.find((e) => e.id === id);
@@ -607,6 +611,7 @@
   }
 
   function renderEmailDetail(email) {
+    state.detailEmail = email;
     els.emailDetailCard.innerHTML = `
       <button class="email-detail-back" id="backBtn">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
@@ -645,6 +650,39 @@
     if (!host) return;
 
     const html = (email.html_body || '').trim();
+    const theme = window.MindbaseTheme?.getStoredTheme?.() || document.documentElement.dataset.theme || 'dark';
+    const themeStyles = {
+      dark: {
+        background: '#111111',
+        foreground: '#e8eaed',
+        link: '#cfd6e6',
+        border: '#2a2a2a',
+      },
+      light: {
+        background: '#ffffff',
+        foreground: '#1f2937',
+        link: '#111827',
+        border: '#d8dee9',
+      },
+      'black-gold': {
+        background: '#120f09',
+        foreground: '#f9eed6',
+        link: '#d0a34b',
+        border: '#2d2414',
+      },
+      'blue-night': {
+        background: '#0c1320',
+        foreground: '#e9f0ff',
+        link: '#8fb0ff',
+        border: '#22304a',
+      },
+    }[theme] || {
+      background: '#111111',
+      foreground: '#e8eaed',
+      link: '#cfd6e6',
+      border: '#2a2a2a',
+    };
+
     if (html && window.DOMPurify) {
       // Sanitize, then render inside a sandboxed iframe so the email's own CSS
       // can't touch the app. No allow-scripts → inline JS in the email never runs.
@@ -660,11 +698,13 @@
         <base target="_blank">
         <meta name="referrer" content="no-referrer">
         <style>
-          html,body{margin:0;padding:16px;background:#fff;color:#1a1a1a;
+          html,body{margin:0;padding:16px;background:${themeStyles.background};color:${themeStyles.foreground};
             font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;word-break:break-word;}
+          body{color-scheme:${theme === 'light' ? 'light' : 'dark'};}
           img{max-width:100%!important;height:auto!important;}
           table{max-width:100%!important;}
-          a{color:#2563eb;}
+          a{color:${themeStyles.link};}
+          blockquote, pre, code { border-color:${themeStyles.border}; }
         </style></head><body>${clean}</body></html>`;
       frame.addEventListener('load', () => {
         try {
@@ -680,6 +720,12 @@
       host.innerHTML = `<div class="email-detail-body">${linkify(escHtml(email.body || email.snippet || '(no content)'))}</div>`;
     }
   }
+
+  window.addEventListener('mindbase-themechange', () => {
+    if (state.detailEmail) {
+      renderEmailBody(state.detailEmail);
+    }
+  });
 
   async function summarizeEmail(id) {
     const btn = document.getElementById('summarizeBtn');

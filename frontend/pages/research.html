@@ -4,14 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Research — Mindbase</title>
+  <script src="../js/theme.js?v=20260802"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260728">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .step-card { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:10px; box-shadow:0 6px 18px -12px rgba(0,0,0,0.6); }
     .step-card-title { font-size:13px; font-weight:500; color:var(--text-primary); margin-bottom:6px; }
     .progress-bar { height:3px; background:var(--border-subtle); border-radius:99px; overflow:hidden; margin-bottom:12px; }
-    .progress-fill { height:100%; background:linear-gradient(90deg, var(--accent), #f0f2f5); border-radius:99px; transition:width 400ms ease; width:0; box-shadow:0 0 8px rgba(255,255,255,0.3); }
+    .progress-fill { height:100%; background:linear-gradient(90deg, var(--accent), var(--accent-soft)); border-radius:99px; transition:width 400ms ease; width:0; box-shadow:0 0 8px var(--accent-soft); }
     /* Quick-start suggestion chips */
     .suggest-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
     .suggest-chip { font-size:12px; font-weight:300; color:var(--text-secondary); background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:999px; padding:6px 13px; cursor:pointer; transition:border-color 150ms ease, color 150ms ease, background 150ms ease, transform 120ms ease; }
