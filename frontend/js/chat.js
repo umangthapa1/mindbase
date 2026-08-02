@@ -5,6 +5,8 @@ class ChatManager {
         this.currentConversationId = null;
         this.conversations = [];
         this.isLoading = false;
+        this.messageContextMenu = null;
+        this.activeMessageElement = null;
     }
 
     setupMessageInput() {
@@ -57,6 +59,129 @@ class ChatManager {
         await this.loadModels();
         this.updateAgentBadge();
         this.setupMessageInput();
+        this.setupMessageContextMenu();
+    }
+
+    setupMessageContextMenu() {
+        if (this.messageContextMenu) return;
+
+        const menu = document.createElement('div');
+        menu.className = 'message-context-menu';
+        menu.hidden = true;
+        menu.innerHTML = `
+            <button type="button" class="message-context-menu-item" data-action="copy">Copy message</button>
+        `;
+
+        menu.addEventListener('click', async (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            const item = target?.closest('[data-action]');
+            if (!item) return;
+
+            const action = item.dataset.action;
+            if (action === 'copy') {
+                await this.copyActiveMessage();
+            }
+
+            this.hideMessageContextMenu();
+        });
+
+        document.body.appendChild(menu);
+        this.messageContextMenu = menu;
+
+        document.addEventListener('click', (event) => {
+            if (!this.messageContextMenu || this.messageContextMenu.hidden) return;
+            const target = event.target instanceof Element ? event.target : null;
+            if (this.messageContextMenu.contains(event.target)) return;
+            if (target?.closest('.message')) return;
+            this.hideMessageContextMenu();
+        });
+
+        document.addEventListener('contextmenu', (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (target?.closest('.message') || target?.closest('.message-context-menu')) return;
+            this.hideMessageContextMenu();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.hideMessageContextMenu();
+            }
+        });
+
+        const closeOnScroll = () => this.hideMessageContextMenu();
+        $('#messagesContainer')?.addEventListener('scroll', closeOnScroll, { passive: true });
+        window.addEventListener('resize', closeOnScroll);
+    }
+
+    showMessageContextMenu(messageElement, event) {
+        if (!this.messageContextMenu) return;
+
+        this.activeMessageElement = messageElement;
+        this.messageContextMenu.hidden = false;
+        this.messageContextMenu.classList.add('visible');
+        messageElement.classList.add('has-context-menu');
+
+        const menuWidth = 180;
+        const menuHeight = 56;
+        const padding = 10;
+        const x = Math.min(event.clientX, window.innerWidth - menuWidth - padding);
+        const y = Math.min(event.clientY, window.innerHeight - menuHeight - padding);
+
+        this.messageContextMenu.style.left = `${Math.max(padding, x)}px`;
+        this.messageContextMenu.style.top = `${Math.max(padding, y)}px`;
+    }
+
+    hideMessageContextMenu() {
+        if (!this.messageContextMenu) return;
+
+        this.messageContextMenu.hidden = true;
+        this.messageContextMenu.classList.remove('visible');
+        this.messageContextMenu.style.left = '';
+        this.messageContextMenu.style.top = '';
+
+        if (this.activeMessageElement) {
+            this.activeMessageElement.classList.remove('has-context-menu');
+        }
+
+        this.activeMessageElement = null;
+    }
+
+    getMessageCopyText(messageElement) {
+        const bubble = messageElement?.querySelector('.msg-bubble');
+        if (!bubble) return '';
+
+        return (bubble.innerText || bubble.textContent || '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
+    async copyActiveMessage() {
+        const text = this.getMessageCopyText(this.activeMessageElement);
+        if (!text) {
+            toast('Nothing to copy.', 'info');
+            return;
+        }
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const fallback = document.createElement('textarea');
+                fallback.value = text;
+                fallback.setAttribute('readonly', 'true');
+                fallback.style.position = 'fixed';
+                fallback.style.opacity = '0';
+                document.body.appendChild(fallback);
+                fallback.select();
+                document.execCommand('copy');
+                fallback.remove();
+            }
+
+            toast('Message copied.', 'info');
+        } catch (err) {
+            console.error('Failed to copy message:', err);
+            toast('Could not copy the message.', 'error');
+        }
     }
 
     /* ── Agent badge (single source of truth for the active agent) ── */
@@ -201,6 +326,7 @@ class ChatManager {
 
     /* ── Select / load conversation ── */
     async selectConversation(id) {
+        this.hideMessageContextMenu();
         this.currentConversationId = id;
         this.renderConversations();
         try {
@@ -213,6 +339,7 @@ class ChatManager {
     }
 
     displayConversation(conversation) {
+        this.hideMessageContextMenu();
         this.clearMessages();
         conversation.messages.forEach(msg => this.appendMessage(msg.role, msg.content));
         this.scrollBottom();
@@ -249,6 +376,7 @@ class ChatManager {
 
     /* ── DOM helpers ── */
     clearMessages(showWelcome = false) {
+        this.hideMessageContextMenu();
         const inner = $('#messagesInner');
         inner.innerHTML = `
             <div class="typing-indicator" id="typingIndicator" aria-label="Assistant is typing">
@@ -306,6 +434,15 @@ class ChatManager {
                 <div class="msg-bubble">${bubbleHTML}</div>
             </div>
         `;
+
+        el.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            this.showMessageContextMenu(el, event);
+        });
+
+        el.addEventListener('click', () => {
+            this.hideMessageContextMenu();
+        });
 
         // Syntax highlight code blocks for non-streaming messages
         if (!streaming) {

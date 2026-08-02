@@ -1041,6 +1041,11 @@ textarea:focus {
   overflow-wrap: break-word;
 }
 
+.message.has-context-menu .msg-bubble {
+  border-color: var(--border-mid);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
 .message.user .msg-bubble {
   background: var(--user-bubble);
   border: 1px solid var(--user-border);
@@ -1134,6 +1139,64 @@ textarea:focus {
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 12px;
+}
+
+.message-context-menu {
+  position: fixed;
+  z-index: 90;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border-mid);
+  background: rgba(18, 18, 18, 0.96);
+  box-shadow: 0 18px 44px -24px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.message-context-menu[hidden] {
+  display: none;
+}
+
+.message-context-menu.visible {
+  animation: menuIn 140ms var(--ease) both;
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.message-context-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.message-context-menu-item:hover,
+.message-context-menu-item:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
 }
 
 /* Highlight.js override */
