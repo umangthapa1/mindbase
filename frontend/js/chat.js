@@ -7,10 +7,56 @@ class ChatManager {
         this.isLoading = false;
     }
 
+    setupMessageInput() {
+        const input = $('#messageInput');
+        if (!input) return;
+
+        // Auto-resize textarea as user types
+        const adjustHeight = () => {
+            input.style.height = 'auto';
+            input.style.height = (input.scrollHeight) + 'px';
+        };
+
+        // Input event for auto-resizing
+        input.addEventListener('input', () => {
+            // Limit height to prevent excessive growth
+            if (input.scrollHeight <= 120) { // Max 4 lines approx
+                adjustHeight();
+            }
+
+            // Update character counter if implemented
+            this.updateCharCount && this.updateCharCount(input.value.length);
+        });
+
+        // Focus events for enhanced styling
+        input.addEventListener('focus', () => {
+            const composer = input.closest('.composer');
+            if (composer) {
+                composer.classList.add('input-focused');
+            }
+        });
+
+        input.addEventListener('blur', () => {
+            const composer = input.closest('.composer');
+            if (composer) {
+                composer.classList.remove('input-focused');
+            }
+        });
+
+        // Prevent form submission on Enter (we handle it separately)
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+    }
+
     async initialize() {
         await this.loadConversations();
         await this.loadModels();
         this.updateAgentBadge();
+        this.setupMessageInput();
     }
 
     /* ── Agent badge (single source of truth for the active agent) ── */
@@ -300,6 +346,91 @@ class ChatManager {
         if (!btn) return;
         btn.disabled = loading;
         btn.classList.toggle('loading', loading);
+    }
+
+    /* ── Message input enhancements ── */
+    setupMessageInput() {
+        const input = $('#messageInput');
+        if (!input) return;
+
+        // Create character counter element
+        const counter = document.createElement('div');
+        counter.className = 'char-counter';
+        counter.textContent = '0/10000';
+        input.parentNode.insertBefore(counter, input.nextSibling);
+
+        // Auto-resize textarea as user types
+        const adjustHeight = () => {
+            input.style.height = 'auto';
+            input.style.height = (input.scrollHeight) + 'px';
+        };
+
+        // Input event for auto-resizing
+        input.addEventListener('input', () => {
+            // Limit height to prevent excessive growth
+            if (input.scrollHeight <= 120) { // Max 4 lines approx
+                adjustHeight();
+            }
+
+            // Update character counter
+            this.updateCharCount(input.value.length, counter);
+        });
+
+        // Focus events for enhanced styling
+        input.addEventListener('focus', () => {
+            const composer = input.closest('.composer');
+            if (composer) {
+                composer.classList.add('input-focused');
+            }
+        });
+
+        input.addEventListener('blur', () => {
+            const composer = input.closest('.composer');
+            if (composer) {
+                composer.classList.remove('input-focused');
+            }
+        });
+
+        // Prevent form submission on Enter (we handle it separately)
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+    }
+
+    updateCharCount(count, counterElement) {
+        if (!counterElement) return;
+
+        const maxLength = 10000;
+        const percentage = (count / maxLength) * 100;
+
+        counterElement.textContent = `${count}/${maxLength}`;
+
+        // Change color based on length
+        if (count > maxLength * 0.9) {
+            counterElement.classList.add('limit-warning');
+            if (count > maxLength) {
+                counterElement.style.color = 'var(--danger)';
+            } else {
+                counterElement.style.color = 'var(--warning)';
+            }
+        } else if (count > maxLength * 0.75) {
+            counterElement.classList.add('limit-warning');
+            counterElement.style.color = 'var(--warning)';
+        } else {
+            counterElement.classList.remove('limit-warning');
+            counterElement.style.color = 'var(--text-tertiary)';
+        }
+
+        // Prevent typing past limit
+        if (count > maxLength) {
+            this.showToast(`Message is too long — keep it under ${maxLength.toLocaleString()} characters.`, 'error');
+            // Truncate to max length
+            const truncated = this.conversations.find(c => c.id === this.currentConversationId)?.messages.slice(0, -1) || [];
+            // Note: Actual truncation would happen in sendMessage validation
+        }
     }
 
     /* ── Send message ── */

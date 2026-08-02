@@ -46,9 +46,8 @@ body.has-app-dock { padding-left: var(--dock-width); }
 /* ── Page layout ── */
 .page-root {
   min-height: 100vh;
-  /* Faint atmospheric glow up top so pages aren't flat black */
   background:
-    radial-gradient(1100px 520px at 50% -12%, rgba(255, 255, 255, 0.04), transparent 70%),
+    radial-gradient(1100px 520px at 50% -12%, rgba(255, 255, 255, 0.005), transparent 70%),
     var(--bg-void);
   display: flex;
   flex-direction: column;
@@ -104,15 +103,13 @@ body.has-app-dock { padding-left: var(--dock-width); }
 /* ── Cards ── */
 .card {
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 120px),
-    var(--bg-surface);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   padding: 24px;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.03) inset,
-    0 8px 24px -12px rgba(0, 0, 0, 0.6);
+    0 1px 0 rgba(255, 255, 255, 0.02) inset,
+    0 8px 24px -12px rgba(0, 0, 0, 0.4);
 }
 
 .card + .card { margin-top: 16px; }
@@ -123,8 +120,8 @@ body.has-app-dock { padding-left: var(--dock-width); }
   border-color: var(--border-mid);
   transform: translateY(-2px);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 14px 32px -14px rgba(0, 0, 0, 0.7);
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 14px 32px -14px rgba(0, 0, 0, 0.5);
 }
 
 .card-title {
@@ -280,7 +277,7 @@ select option { background: var(--bg-elevated); }
 .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
 .btn-primary {
-  background: linear-gradient(180deg, #e8eaed, #d4d9e0);
+  background: linear-gradient(180deg, #e0e0e0, #cccccc);
   border-color: transparent;
   color: #111317;
   font-weight: 500;
@@ -353,17 +350,43 @@ select option { background: var(--bg-elevated); }
 .stat-card {
   position: relative;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 80px),
-    var(--bg-surface);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   padding: 18px 20px;
-  box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.4);
   transition:
     border-color 180ms var(--ease),
     transform 180ms var(--ease),
     box-shadow 180ms var(--ease);
+}
+
+/* Enhanced stat card with trend indicator */
+.stat-card.trend-up::after,
+.stat-card.trend-down::after,
+.stat-card.trend-neutral::after {
+  content: '';
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.stat-card.trend-up::after {
+  background: var(--ok);
+  box-shadow: 0 0 0 2px rgba(216, 218, 221, 0.3);
+}
+
+.stat-card.trend-down::after {
+  background: var(--danger);
+  box-shadow: 0 0 0 2px rgba(163, 166, 171, 0.3);
+}
+
+.stat-card.trend-neutral::after {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px rgba(185, 188, 193, 0.3);
 }
 
 .stat-card:hover {
@@ -506,17 +529,43 @@ input[type="range"]::-moz-range-thumb {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 12px;
   text-align: center;
-  padding: 48px 24px;
-  color: var(--text-tertiary);
-  font-size: 12.5px;
+  padding: 32px 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
   font-weight: 300;
   letter-spacing: 0.01em;
   line-height: 1.6;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  transition: border-color 150ms ease;
 }
 
-.empty-state svg { width: 26px; height: 26px; opacity: 0.4; margin-bottom: 2px; }
+.empty-state:hover {
+  border-color: var(--border-mid);
+}
+
+.empty-state svg {
+  width: 48px;
+  height: 48px;
+  opacity: 0.3;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  transition: opacity 200ms ease;
+}
+
+.empty-state:hover svg {
+  opacity: 0.4;
+}
+
+/* Enhanced empty state actions */
+.empty-state .btn {
+  margin-top: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+}
 
 /* Loading text gets a gentle pulse so it reads as "working" not "stuck" */
 .empty-state.is-loading,

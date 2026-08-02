@@ -7,38 +7,41 @@
 }
 
 :root {
-  --bg-void: #05070b;
-  --bg-surface: #0a0d14;
-  --bg-raised: #0f1320;
-  --bg-elevated: #141928;
-  --bg-hover: rgba(255, 255, 255, 0.04);
-  --bg-active: rgba(255, 255, 255, 0.07);
+  /* True black theme - pure grayscale for maximum darkness */
+  --bg-void: #000000;
+  --bg-surface: #0a0a0a;
+  --bg-raised: #121212;
+  --bg-elevated: #1e1e1e;
+  --bg-hover: rgba(255, 255, 255, 0.02);
+  --bg-active: rgba(255, 255, 255, 0.04);
 
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-mid: rgba(255, 255, 255, 0.10);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-mid: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
 
-  --text-primary: rgba(255, 255, 255, 0.92);
-  --text-secondary: rgba(255, 255, 255, 0.45);
-  --text-tertiary: rgba(255, 255, 255, 0.25);
+  /* Pure grayscale text */
+  --text-primary: rgba(255, 255, 255, 0.9);
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --text-tertiary: rgba(255, 255, 255, 0.3);
 
-  --user-bubble: #181a1f;
-  --user-border: rgba(255, 255, 255, 0.12);
-  --assistant-bubble: #0d1019;
-  --assistant-border: rgba(255, 255, 255, 0.07);
+  /* Message bubbles - true grayscale */
+  --user-bubble: #1a1a1a;
+  --user-border: rgba(255, 255, 255, 0.08);
+  --assistant-bubble: #151515;
+  --assistant-border: rgba(255, 255, 255, 0.05);
 
-  /* Monochrome accent: white/light-grey for hierarchy without color */
-  --accent: #e8eaed;
-  --accent-soft: rgba(255, 255, 255, 0.10);
-  --accent-border: rgba(255, 255, 255, 0.28);
-  --accent-ring: rgba(255, 255, 255, 0.45);
+  /* Grayscale accents */
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.06);
+  --accent-border: rgba(255, 255, 255, 0.15);
+  --accent-ring: rgba(255, 255, 255, 0.25);
 
-  --ok: #d8dadd;
-  --warning: #b9bcc1;
-  --danger: #a3a6ab;
+  --ok: #e0e0e0;
+  --warning: #d0d0d0;
+  --danger: #b0b0b0;
 
-  --glass-bg: rgba(10, 13, 20, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(0, 0, 0, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.1);
 
   --dock-width: 72px;
   --sidebar-width: 220px;
@@ -60,10 +63,10 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Faint atmospheric glow so the workspace reads with depth, not flat black */
+/* Subtle cosmic glow for depth - barely visible */
 body {
   background:
-    radial-gradient(1000px 480px at 50% -8%, rgba(255, 255, 255, 0.03), transparent 70%),
+    radial-gradient(1000px 480px at 50% -8%, rgba(248, 250, 255, 0.012), transparent 70%),
     var(--bg-void);
 }
 
@@ -74,7 +77,7 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
 
 /* ── Keyboard focus ── */
-/* Visible ring for keyboard users only; mouse focus stays clean. */
+/* Enhanced visible ring for keyboard users with better contrast */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
@@ -87,10 +90,370 @@ textarea:focus-visible,
     0 0 0 4px var(--accent-ring),
     0 2px 4px rgba(0,0,0,0.3);
   border-radius: 8px;
+  position: relative;
+}
+
+a:focus-visible::before,
+button:focus-visible::before,
+input:focus-visible::before,
+select:focus-visible::before,
+textarea:focus-visible::before,
+[tabindex]:focus-visible::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 1px solid var(--accent-ring);
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 :focus:not(:focus-visible) {
   outline: none;
+}
+
+/* Enhance interactive elements with better hover states */
+button:not(.btn):not(.send-btn):not(.btn-ghost):not(.btn-primary):not(.btn-danger) {
+  transition: all 150ms ease;
+}
+
+button:not(.btn):not(.send-btn):not(.btn-ghost):not(.btn-primary):not(.btn-danger):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Improved link styles */
+a {
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: color 150ms ease, text-shadow 150ms ease;
+}
+
+a:hover {
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(255,255,255,0.2);
+}
+
+/* Enhanced card hover effects with depth */
+.card-hover {
+  transition:
+    border-color 180ms var(--ease),
+    transform 180ms var(--ease),
+    box-shadow 180ms var(--ease),
+    background-color 180ms var(--ease);
+}
+
+.card-hover:hover {
+  border-color: var(--border-mid);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 14px 32px -14px rgba(0, 0, 0, 0.5);
+  background-color: rgba(18, 18, 18, 0.8);
+}
+
+/* Stat card enhancements */
+.stat-card {
+  transition:
+    border-color 180ms var(--ease),
+    transform 180ms var(--ease),
+    box-shadow 180ms var(--ease),
+    background-color 180ms var(--ease);
+}
+
+.stat-card:hover {
+  border-color: var(--border-mid);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 12px 28px -10px rgba(0, 0, 0, 0.7);
+  background-color: rgba(10, 10, 10, 0.8);
+}
+
+.stat-card:active {
+  transform: translateY(0);
+}
+
+/* Enhanced dock item interactions */
+.dock-item {
+  transition:
+    background 180ms var(--ease),
+    border-color 180ms var(--ease),
+    transform 180ms var(--ease),
+    box-shadow 180ms var(--ease),
+    color 180ms var(--ease);
+}
+
+.dock-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+  transform: scale(1.05) translateY(-2px);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(248, 250, 255, 0.1);
+}
+
+.dock-item:active {
+  transform: scale(0.96);
+  transition-duration: 80ms;
+}
+
+.dock-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+  box-shadow:
+    0 0 0 1px rgba(248, 250, 255, 0.05) inset,
+    0 0 8px rgba(248, 250, 255, 0.1),
+    0 0 0 2px rgba(248, 250, 255, 0.2);
+  transform: scale(1.02);
+}
+
+/* Enhanced form elements */
+.input,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+input[type="date"],
+input[type="time"],
+input[type="month"],
+input[type="datetime-local"],
+input[type="number"],
+textarea,
+select {
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.input:focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="url"]:focus,
+input[type="tel"]:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+input[type="month"]:focus,
+input[type="datetime-local"]:focus,
+input[type="number"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent-border);
+  background: var(--bg-elevated);
+  box-shadow:
+    0 0 0 1px var(--accent-soft) inset,
+    0 0 0 3px rgba(255, 255, 255, 0.07);
+}
+
+/* Enhanced select dropdown */
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.3)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+}
+
+.select-wrapper {
+  position: relative;
+}
+
+.select-wrapper::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid var(--text-secondary);
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: transform 150ms ease;
+}
+
+.select-wrapper.select-open::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* Enhanced textarea */
+textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.6;
+  transition: all 150ms ease;
+}
+
+textarea:focus {
+  box-shadow:
+    0 0 0 1px var(--accent-soft) inset,
+    0 0 0 3px rgba(255, 255, 255, 0.07);
+}
+
+/* Enhanced badge animations */
+.badge {
+  transition: all 150ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.badge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.1),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.badge:hover::before {
+  opacity: 1;
+}
+
+/* Toast enhancements */
+.toast {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-mid);
+  border-left: 2px solid var(--border-strong);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  animation: toastIn 0.28s var(--ease) both, toastFloat 3s ease-in-out infinite;
+}
+
+@keyframes toastFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+.toast:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Enhanced confirmation dialog */
+.confirm-card {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-mid);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: confirmPopup 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes confirmPopup {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  70% {
+    transform: translateY(10px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Enhanced loading skeletons */
+.skeleton-lines .line::after,
+.conv-skeleton-enhanced .avatar::after,
+.conv-skeleton-enhanced .line::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s var(--ease) infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -100% 0; }
+  100% { background-position: 100% 0; }
+}
+
+/* Message bubble enhancements */
+.message.user .msg-bubble,
+.message.assistant .msg-bubble {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.message.user .msg-bubble:hover,
+.message.assistant .msg-bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.message.user .msg-bubble {
+  background: var(--user-bubble);
+  border: 1px solid var(--user-border);
+}
+
+.message.assistant .msg-bubble {
+  background: var(--assistant-bubble);
+  border: 1px solid var(--assistant-border);
+}
+
+/* Improve readability of code blocks */
+.msg-bubble pre {
+  border-radius: 8px !important;
+  overflow: visible;
+}
+
+.msg-bubble pre code {
+  border-radius: 4px;
+  display: inline-block;
+  padding: 2px 4px;
+}
+
+/* Link styling in messages */
+.msg-bubble a {
+  position: relative;
+  transition: all 150ms ease;
+}
+
+.msg-bubble a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.msg-bubble a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  transition: width 0.3s ease;
+}
+
+.msg-bubble a:hover::after {
+  width: 100%;
 }
 
 /* ── App shell ── */
@@ -183,6 +546,24 @@ textarea:focus-visible,
     color 180ms var(--ease);
 }
 
+/* Notification badge for dock items */
+.dock-item .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 10px;
+  height: 10px;
+  background: var(--danger);
+  color: white;
+  border-radius: 50%;
+  font-size: 8px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--bg-void);
+}
+
 .dock-item svg {
   width: 18px;
   height: 18px;
@@ -194,7 +575,9 @@ textarea:focus-visible,
   border-color: var(--border-subtle);
   color: var(--text-primary);
   transform: scale(1.1) translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(248, 250, 255, 0.1);
 }
 
 .dock-item:active {
@@ -207,8 +590,9 @@ textarea:focus-visible,
   border-color: var(--accent-border);
   color: var(--text-primary);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-    0 0 8px rgba(255, 255, 255, 0.1);
+    0 0 0 1px rgba(248, 250, 255, 0.05) inset,
+    0 0 8px rgba(248, 250, 255, 0.1),
+    0 0 0 2px rgba(248, 250, 255, 0.2);
 }
 
 .dock-item.active::before {
@@ -221,7 +605,7 @@ textarea:focus-visible,
   border-radius: 2px;
   background: var(--accent);
   transform: translateY(-50%);
-  box-shadow: 0 0 4px rgba(255,255,255,0.3);
+  box-shadow: 0 0 4px rgba(248,250,255,0.3);
 }
 
 /* Tooltip */
@@ -308,6 +692,7 @@ textarea:focus-visible,
   background: var(--bg-hover);
   border-color: var(--border-mid);
   color: var(--text-primary);
+  box-shadow: 0 0 0 1px rgba(248, 250, 255, 0.15);
 }
 
 .new-chat-btn:active {
@@ -807,6 +1192,8 @@ textarea:focus-visible,
   flex-shrink: 0;
   padding: 12px 24px 18px;
   background: linear-gradient(to top, var(--bg-void) 55%, transparent);
+  position: relative;
+  overflow: hidden;
 }
 
 .composer {
@@ -822,32 +1209,328 @@ textarea:focus-visible,
   gap: 8px;
   padding: 6px 6px 6px 16px;
   transition:
-    border-color 200ms ease,
-    box-shadow 200ms ease;
+    border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 1;
 }
 
+/* Enhanced focus state with layered effect */
 .composer:focus-within {
   border-color: var(--border-strong);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 8px 32px rgba(0, 0, 0, 0.4);
+    0 0 0 2px rgba(255, 255, 255, 0.08) inset,
+    0 0 0 3px rgba(255, 255, 255, 0.04) inset,
+    0 8px 32px rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.65);
 }
 
+/* Add a subtle glow overlay on focus */
+.composer:focus-within::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 16px;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.03) 50%,
+    transparent 70%
+  );
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease-in-out infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Improve input focus state */
+.composer input:focus {
+  outline: none;
+}
+
+/* Enhanced placeholder styling */
+.computer input::placeholder {
+  color: var(--text-tertiary);
+  transition: opacity 200ms ease;
+}
+
+.composer input:focus::placeholder {
+  opacity: 0.7;
+}
+
+/* Send button enhancements */
+.send-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-mid);
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition:
+    background 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 180ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.send-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 1px rgba(248, 250, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.send-btn:active {
+  transform: scale(0.93);
+  transition-duration: 60ms;
+}
+
+.send-btn:active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.send-btn svg {
+  width: 15px;
+  height: 15px;
+  transition: transform 200ms ease;
+}
+
+.send-btn:hover svg {
+  transform: scale(1.1);
+}
+
+.send-btn:active svg {
+  transform: scale(0.9);
+}
+
+/* Add ripple effect to send button */
+.send-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s ease, height 0.3s ease;
+  pointer-events: none;
+}
+
+.send-btn:active::after {
+  width: 60px;
+  height: 60px;
+}
+
+/* Message input specific enhancements */
 .composer input {
-  flex: 1;
-  min-width: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 8px 0;
+  min-height: 20px;
   background: transparent;
   border: none;
   outline: none;
   color: var(--text-primary);
-  font-size: 13.5px;
   font-family: var(--font);
   font-weight: 300;
   letter-spacing: 0.005em;
-  caret-color: rgba(255, 255, 255, 0.6);
+  caret-color: var(--text-primary);
+  resize: none;
+  width: 100%;
+  transition:
+    color 150ms ease,
+    padding 150ms ease;
+}
+
+/* Remove any unwanted outline or box on focus */
+.composer input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Enhanced placeholder behavior */
+.computer input::-webkit-input-placeholder {
+  color: var(--text-tertiary);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.composer input::-moz-placeholder {
+  color: var(--text-tertiary);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.composer input:-ms-input-placeholder {
+  color: var(--text-tertiary);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.composer input::-ms-input-placeholder {
+  color: var(--text-tertiary);
+  transition: opacity 150ms ease, transform 150ms ease;
 }
 
 .composer input::placeholder {
+  color: var(--text-tertiary);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+/* Slightly lift placeholder on focus for better UX */
+.composer input:focus::-webkit-input-placeholder {
+  opacity: 0.7;
+  transform: translateY(-2px);
+}
+
+.composer input:focus::-moz-placeholder {
+  opacity: 0.7;
+  transform: translateY(-2px);
+}
+
+.composer input:focus:-ms-input-placeholder {
+  opacity: 0.7;
+  transform: translateY(-2px);
+}
+
+.composer input:focus::-ms-input-placeholder {
+  opacity: 0.7;
+  transform: translateY(-2px);
+}
+
+.composer input:focus::placeholder {
+  opacity: 0.7;
+  transform: translateY(-2px);
+}
+
+/* Prevent unwanted browser auto-fill backgrounds */
+.composer input:-webkit-autofill,
+.composer input:-webkit-autofill:hover,
+.composer input:-webkit-autofill:focus,
+.composer input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px transparent inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+}
+
+/* Add subtle inner glow on focus for clarity without being intrusive */
+.composer:focus-within {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 0 0 2px rgba(255, 255, 255, 0.02) inset,
+    0 8px 32px rgba(0, 0, 0, 0.4);
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+/* Enhanced focus state for input-focused class */
+.composer.input-focused {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 0 2px rgba(255, 255, 255, 0.04) inset,
+    0 8px 32px rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.65);
+}
+
+/* Clean up any unusual boxes or outlines that might appear */
+/* Override any aggressive browser focus styles */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure no outline appears on any element */
+*:focus {
+  outline: none;
+}
+
+/* Custom focus indicator that's more intentional */
+:focus-visible {
+  outline: none;
+  position: relative;
+}
+
+:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid var(--accent-ring);
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+
+:focus-visible:not(:focus-within)::after {
+  opacity: 0.7;
+}
+
+/* Input height animation for smooth resizing */
+.composer input {
+  transition: height 150ms ease;
+}
+
+/* Prevent jump when placeholder disappears on focus */
+.composer input:not(:focus):placeholder-shown {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.composer input:focus:not(:placeholder-shown) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* Character counter for message input (if implemented) */
+.char-counter {
+  position: absolute;
+  bottom: 8px;
+  right: 16px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+
+/* Show character counter when typing or focused */
+.composer:focus-within .char-counter,
+.composer input:not(:placeholder-shown) ~ .char-counter {
+  opacity: 1;
+}
+
+/* Warning when approaching limit */
+.char-counter.limit-warning {
+  color: var(--warning);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
   color: var(--text-tertiary);
 }
 
@@ -874,6 +1557,7 @@ textarea:focus-visible,
   background: var(--accent-soft);
   border-color: var(--accent-border);
   color: var(--text-primary);
+  box-shadow: 0 0 0 1px rgba(248, 250, 255, 0.2);
 }
 
 .send-btn:active {
@@ -989,16 +1673,120 @@ button {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.08),
     transparent
   );
-  animation: shimmer 1.4s var(--ease) infinite;
+  animation: shimmer 1.6s var(--ease) infinite;
 }
+
+/* Enhanced skeleton with multiple lines for better content representation */
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.skeleton-lines .line {
+  flex: 1;
+  min-height: 12px;
+  background: var(--bg-raised);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-lines .line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  animation: shimmer 1.6s var(--ease) infinite;
+}
+
+/* Variable width lines for more natural look */
+.skeleton-lines .line.short { width: 60%; }
+.skeleton-lines .line.medium { width: 80%; }
+.skeleton-lines .line.long { width: 100%; }
 
 .conv-skeleton {
   height: 30px;
   margin: 4px 0;
 }
+
+/* Enhanced conversation skeleton with avatar and text lines */
+.conv-skeleton-enhanced {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-raised);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.conv-skeleton-enhanced .avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  flex-shrink: 0;
+}
+
+.conv-skeleton-enhanced .avatar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  border-radius: 50%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  animation: shimmer 1.6s var(--ease) infinite;
+}
+
+.conv-skeleton-enhanced .content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conv-skeleton-enhanced .line {
+  flex: 1;
+  min-height: 12px;
+  background: var(--bg-raised);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.conv-skeleton-enhanced .line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.08),
+    transparent
+  );
+  animation: shimmer 1.6s var(--ease) infinite;
+}
+
+.conv-skeleton-enhanced .line.short { width: 60%; }
+.conv-skeleton-enhanced .line.medium { width: 80%; }
+.conv-skeleton-enhanced .line.long { width: 100%; }
 
 @keyframes shimmer {
   100% { transform: translateX(100%); }
@@ -1082,6 +1870,31 @@ button {
   color: var(--text-primary);
   letter-spacing: 0.005em;
   animation: toastIn 0.28s var(--ease) both;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Enhanced toast with progress indicator */
+.toast::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--border-strong);
+  width: 100%;
+  transform-origin: left;
+  animation: toastProgress 3s linear forwards;
+}
+
+.toast.leaving::after {
+  animation: none;
+}
+
+@keyframes toastProgress {
+  to {
+    transform: scaleX(0);
+  }
 }
 
 .toast.leaving {
