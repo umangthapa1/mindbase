@@ -60,6 +60,54 @@ class ChatManager {
         this.updateAgentBadge();
         this.setupMessageInput();
         this.setupMessageContextMenu();
+        this.setupCodeBlockCopyButtons();
+    }
+
+    setupCodeBlockCopyButtons() {
+        if (this.codeCopyButtonsBound) return;
+        this.codeCopyButtonsBound = true;
+
+        $('#messagesContainer')?.addEventListener('click', async (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            const button = target?.closest('[data-action="copy-code"]');
+            if (!button) return;
+
+            const codeBlock = button.closest('pre')?.querySelector('code');
+            const text = codeBlock?.textContent?.trim() || '';
+            if (!text) {
+                toast('Nothing to copy.', 'info');
+                return;
+            }
+
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const fallback = document.createElement('textarea');
+                    fallback.value = text;
+                    fallback.setAttribute('readonly', 'true');
+                    fallback.style.position = 'fixed';
+                    fallback.style.opacity = '0';
+                    document.body.appendChild(fallback);
+                    fallback.select();
+                    document.execCommand('copy');
+                    fallback.remove();
+                }
+
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                button.disabled = true;
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.disabled = false;
+                }, 1200);
+
+                toast('Code copied.', 'info');
+            } catch (err) {
+                console.error('Failed to copy code block:', err);
+                toast('Could not copy the code.', 'error');
+            }
+        });
     }
 
     setupMessageContextMenu() {

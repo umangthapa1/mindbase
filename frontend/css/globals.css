@@ -1250,10 +1250,11 @@ textarea:focus {
 }
 
 .msg-bubble pre {
+  position: relative;
   background: rgba(0, 0, 0, 0.4) !important;
   border: 1px solid rgba(255, 255, 255, 0.06) !important;
   border-radius: 8px !important;
-  padding: 12px !important;
+  padding: 36px 12px 12px !important;
   margin: 10px 0 !important;
   overflow-x: auto;
   font-size: 12px;
@@ -1270,6 +1271,30 @@ textarea:focus {
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 12px;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  border: 1px solid var(--border-mid);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.code-copy-btn:hover,
+.code-copy-btn:focus-visible {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+  transform: translateY(-1px);
 }
 
 .message-context-menu {

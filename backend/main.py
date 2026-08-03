@@ -1073,6 +1073,19 @@ def list_inbox(unread_only: bool = False, limit: int = 50, db: Session = Depends
     emails = q.order_by(EmailDB.received_at.desc()).limit(limit).all()
     return {"emails": [serialize_email(e) for e in emails], "count": len(emails)}
 
+@app.get("/api/email/unread-count")
+def unread_email_count(db: Session = Depends(get_db)):
+    count = db.query(EmailDB).filter(EmailDB.is_unread == True).count()
+    return {"count": count}
+
+@app.post("/api/email/mark-all-read")
+def mark_all_emails_read(db: Session = Depends(get_db)):
+    updated = db.query(EmailDB).filter(EmailDB.is_unread == True).update(
+        {EmailDB.is_unread: False}, synchronize_session=False
+    )
+    db.commit()
+    return {"updated": updated}
+
 @app.get("/api/email/{email_id}")
 def get_email(email_id: str, db: Session = Depends(get_db)):
     email = db.query(EmailDB).filter(EmailDB.id == email_id).first()

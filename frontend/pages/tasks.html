@@ -138,6 +138,7 @@
         const status = e.target.checked ? 'completed' : 'pending';
         await fetch(`${API_BASE}/tasks/${e.target.dataset.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status})});
         loadTasks();
+        window.dispatchEvent(new Event('mindbase-data-changed'));
       });
     });
 
@@ -146,6 +147,7 @@
         if (!await confirmDialog('Delete this task?')) return;
         await fetch(`${API_BASE}/tasks/${btn.dataset.id}`, {method:'DELETE'});
         loadTasks();
+        window.dispatchEvent(new Event('mindbase-data-changed'));
         toast('Task deleted', 'info');
       });
     });
@@ -169,6 +171,7 @@
       document.getElementById('taskDesc').value = '';
       document.getElementById('taskTags').value = '';
       loadTasks();
+      window.dispatchEvent(new Event('mindbase-data-changed'));
       toast('Task created', 'ok');
     } catch(e) { toast('Error: '+e.message, 'error'); }
     finally { btn.disabled=false; btn.textContent='Create task'; }

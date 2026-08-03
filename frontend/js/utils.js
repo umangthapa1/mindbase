@@ -9,7 +9,7 @@ function renderMarkdown(text) {
         // Marked v11 passes the source as a string; newer releases pass a token.
         const source = typeof codeOrToken === 'string' ? codeOrToken : codeOrToken.text;
         const highlighted = hljs.highlightAuto(source || '').value;
-        return `<pre class="code-block"><code class="hljs">${highlighted}</code></pre>`;
+        return `<pre class="code-block"><button type="button" class="code-copy-btn" data-action="copy-code" aria-label="Copy code">Copy code</button><code class="hljs">${highlighted}</code></pre>`;
     };
 
     renderer.codespan = (codeOrToken) => {

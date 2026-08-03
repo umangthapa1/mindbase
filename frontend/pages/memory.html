@@ -109,6 +109,7 @@
         if (!await confirmDialog('Delete this memory?')) return;
         await fetch(`${API_BASE}/memory/${mem.id}`, {method:'DELETE'});
         loadMemories();
+        window.dispatchEvent(new Event('mindbase-data-changed'));
         toast('Memory deleted', 'info');
       });
       list.appendChild(el);
@@ -124,7 +125,7 @@
     btn.disabled=true; btn.textContent='Saving…';
     try {
       const res = await fetch(`${API_BASE}/memory/create`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content,type,tags})});
-      if(res.ok) { document.getElementById('memoryContent').value=''; document.getElementById('memoryTags').value=''; loadMemories(); toast('Memory saved', 'ok'); }
+      if(res.ok) { document.getElementById('memoryContent').value=''; document.getElementById('memoryTags').value=''; loadMemories(); window.dispatchEvent(new Event('mindbase-data-changed')); toast('Memory saved', 'ok'); }
       else { toast('Error creating memory', 'error'); }
     } catch(e) { toast('Error: '+e.message, 'error'); }
     finally { btn.disabled=false; btn.textContent='Create memory'; }

@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  if (document.querySelector('.dock')) return; // chat page already has one
+  if (window.MindbaseDock?.initialized) return;
 
   // Brand mark (matches index.html)
   const LOGO = `
@@ -47,7 +47,6 @@
   const SETTINGS = ['settings', 'Settings', '/pages/settings.html',
     `<circle cx="10" cy="10" r="2.5"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/>`];
 
-  // Which item is current, derived from the URL
   let activeKey = 'chat';
   const match = location.pathname.match(/\/pages\/([a-z-]+)\.html/i);
   if (match) activeKey = match[1].toLowerCase();
@@ -63,18 +62,37 @@
             </a>`;
   };
 
-  const dock = document.createElement('nav');
-  dock.className = 'dock dock--fixed';
-  dock.setAttribute('role', 'navigation');
-  dock.setAttribute('aria-label', 'Main navigation');
-  dock.innerHTML = `
-    <a class="dock-logo" href="/" aria-label="Mindbase home">${LOGO}</a>
-    <div class="dock-nav">${ITEMS.map(linkFor).join('')}</div>
-    <div class="dock-bottom">
-      <div class="dock-divider"></div>
-      ${linkFor(SETTINGS)}
-    </div>`;
+  function buildDock() {
+    const existing = document.querySelector('.dock');
+    if (existing) {
+      return existing;
+    }
 
-  document.body.classList.add('has-app-dock');
-  document.body.insertBefore(dock, document.body.firstChild);
+    const dock = document.createElement('nav');
+    dock.className = 'dock dock--fixed';
+    dock.setAttribute('role', 'navigation');
+    dock.setAttribute('aria-label', 'Main navigation');
+    dock.innerHTML = `
+      <a class="dock-logo" href="/" aria-label="Mindbase home">${LOGO}</a>
+      <div class="dock-nav">${ITEMS.map(linkFor).join('')}</div>
+      <div class="dock-bottom">
+        <div class="dock-divider"></div>
+        ${linkFor(SETTINGS)}
+      </div>`;
+
+    document.body.classList.add('has-app-dock');
+    document.body.insertBefore(dock, document.body.firstChild);
+    return dock;
+  }
+
+  function init() {
+    buildDock();
+    window.MindbaseDock = { initialized: true };
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
 })();

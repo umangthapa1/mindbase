@@ -152,7 +152,7 @@
       width: 100%;
       border: 0;
       border-radius: 10px;
-      background: #fff;
+      background: var(--bg-surface);
       min-height: 140px;
       display: block;
       color-scheme: light;
@@ -398,10 +398,12 @@
         <span class="connection-text"><span class="connection-dot"></span>Connected${state.email ? ' · ' + escHtml(state.email) : ''}</span>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost" id="syncBtn">Sync inbox</button>
+          <button class="btn btn-ghost" id="markAllReadBtn">Mark all read</button>
           <button class="btn btn-danger" id="disconnectBtn">Disconnect</button>
         </div>
       `;
       document.getElementById('syncBtn')?.addEventListener('click', syncInbox);
+      document.getElementById('markAllReadBtn')?.addEventListener('click', markAllRead);
       document.getElementById('disconnectBtn')?.addEventListener('click', disconnectEmail);
     } else {
       els.connectionStatus.innerHTML = `
@@ -472,6 +474,7 @@
       renderEmailList();
       renderEmptyDetail();
       setUnreadCount(0);
+      window.dispatchEvent(new Event('mindbase-data-changed'));
       toast('Inbox disconnected.', 'info');
     } catch (err) {
       console.error('Failed to disconnect email:', err);
@@ -492,6 +495,7 @@
       });
       if (!res.ok) throw new Error(`Sync failed: ${res.status}`);
       await loadInbox();
+      window.dispatchEvent(new Event('mindbase-data-changed'));
     } catch (err) {
       console.error('Inbox sync failed:', err);
       toast("Couldn't sync your inbox. Check the server logs.", 'error');
@@ -518,6 +522,7 @@
       setUnreadCount(unreadCount);
 
       renderEmailList();
+      window.dispatchEvent(new Event('mindbase-data-changed'));
     } catch (err) {
       console.error('Failed to load inbox:', err);
       els.emailList.innerHTML = `<div class="empty-state">Couldn't load your inbox. Try syncing again.</div>`;
@@ -718,6 +723,33 @@
     } else {
       // Plain-text email: escape, linkify URLs, preserve line breaks.
       host.innerHTML = `<div class="email-detail-body">${linkify(escHtml(email.body || email.snippet || '(no content)'))}</div>`;
+    }
+  }
+
+  async function markAllRead() {
+    const btn = document.getElementById('markAllReadBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Marking…';
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/mark-all-read`, { method: 'POST' });
+      if (!res.ok) throw new Error(`Mark all read failed: ${res.status}`);
+
+      state.emails.forEach((email) => { email.is_unread = false; });
+      setUnreadCount(0);
+      renderEmailList();
+      window.dispatchEvent(new Event('mindbase-data-changed'));
+      toast('All emails marked as read.', 'info');
+    } catch (err) {
+      console.error('Failed to mark all emails read:', err);
+      toast("Couldn't mark all emails read.", 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Mark all read';
+      }
     }
   }
 
