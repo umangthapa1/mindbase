@@ -1,6 +1,6 @@
 const THEME_STORAGE_KEY = 'theme';
 const DEFAULT_THEME = 'dark';
-const SUPPORTED_THEMES = new Set(['dark', 'light', 'black-gold', 'blue-night']);
+const SUPPORTED_THEMES = new Set(['dark', 'light', 'black-gold', 'blue-night', 'grey-ash']);
 
 function normalizeTheme(theme) {
     return SUPPORTED_THEMES.has(theme) ? theme : DEFAULT_THEME;

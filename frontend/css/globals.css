@@ -54,6 +54,9 @@
   --font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: 'DM Mono', 'Courier New', monospace;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Code block colors (theme-overridden) */
+  --code-bg: rgba(0, 0, 0, 0.4);
+  --code-border: rgba(255, 255, 255, 0.06);
 }
 
 :root[data-theme="light"] {
@@ -94,6 +97,9 @@
   --context-menu-shadow: 0 18px 44px -24px rgba(15, 23, 42, 0.22);
   --context-menu-item-hover: rgba(15, 23, 42, 0.05);
   --context-menu-item-text: rgba(15, 23, 42, 0.9);
+  /* Code block style */
+  --code-bg: #f3f4f6;
+  --code-border: rgba(15, 23, 42, 0.06);
 }
 
 :root[data-theme="black-gold"] {
@@ -134,6 +140,9 @@
   --context-menu-shadow: 0 18px 44px -24px rgba(0, 0, 0, 0.85);
   --context-menu-item-hover: rgba(208, 163, 75, 0.09);
   --context-menu-item-text: rgba(249, 238, 214, 0.94);
+  /* Code block style */
+  --code-bg: #120f09;
+  --code-border: rgba(208, 163, 75, 0.06);
 }
 
 :root[data-theme="blue-night"] {
@@ -174,6 +183,52 @@
   --context-menu-shadow: 0 18px 44px -24px rgba(0, 0, 0, 0.85);
   --context-menu-item-hover: rgba(120, 153, 255, 0.09);
   --context-menu-item-text: rgba(233, 240, 255, 0.94);
+  /* Code block style */
+  --code-bg: #0e1626;
+  --code-border: rgba(143, 176, 255, 0.06);
+}
+
+:root[data-theme="grey-ash"] {
+  color-scheme: light;
+  --bg-void: #eef0f2;
+  --bg-surface: #f7f8f9;
+  --bg-raised: #f1f3f4;
+  --bg-elevated: #e9ebed;
+  --bg-hover: rgba(15, 23, 42, 0.03);
+  --bg-active: rgba(15, 23, 42, 0.06);
+
+  --border-subtle: rgba(15, 23, 42, 0.06);
+  --border-mid: rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.14);
+
+  --text-primary: rgba(15, 23, 42, 0.92);
+  --text-secondary: rgba(15, 23, 42, 0.62);
+  --text-tertiary: rgba(15, 23, 42, 0.38);
+
+  --user-bubble: #f4f5f6;
+  --user-border: rgba(15, 23, 42, 0.06);
+  --assistant-bubble: #f7f8f9;
+  --assistant-border: rgba(15, 23, 42, 0.05);
+
+  --accent: #6b7280; /* muted slate */
+  --accent-soft: rgba(107, 114, 128, 0.06);
+  --accent-border: rgba(107, 114, 128, 0.12);
+  --accent-ring: rgba(107, 114, 128, 0.14);
+
+  --ok: #334155;
+  --warning: #475569;
+  --danger: #64748b;
+
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(15, 23, 42, 0.06);
+  --context-menu-bg: rgba(255, 255, 255, 0.96);
+  --context-menu-border: rgba(15, 23, 42, 0.08);
+  --context-menu-shadow: 0 18px 44px -24px rgba(15, 23, 42, 0.08);
+  --context-menu-item-hover: rgba(15, 23, 42, 0.04);
+  --context-menu-item-text: rgba(15, 23, 42, 0.9);
+  /* Code block style for Grey Ash */
+  --code-bg: #eef2f5;
+  --code-border: rgba(15, 23, 42, 0.06);
 }
 
 :root[data-theme="light"] .dock-logo svg,
@@ -1251,8 +1306,8 @@ textarea:focus {
 
 .msg-bubble pre {
   position: relative;
-  background: rgba(0, 0, 0, 0.4) !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: var(--code-bg) !important;
+  border: 1px solid var(--code-border) !important;
   border-radius: 8px !important;
   padding: 36px 12px 12px !important;
   margin: 10px 0 !important;
