@@ -36,6 +36,8 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 - **Model Switching**: Change AI models on-the-fly without restart
 - **Conversation History**: Persistent chat history with search
 - **Multi-modal Support**: Handle text, documents, and email content
+- **Theme Changer**: Switch between light, dark, and Grey Ash themes via the dashboard.
+- **Message Copying**: Right-click any chat message to copy its content to clipboard.
 
 ### Security & Privacy
 - **100% Local**: All data stays on your machine
