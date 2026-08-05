@@ -36,7 +36,7 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 - **Model Switching**: Change AI models on-the-fly without restart
 - **Conversation History**: Persistent chat history with search
 - **Multi-modal Support**: Handle text, documents, and email content
-- **Theme Changer**: Switch between light, dark, and Grey Ash themes via the dashboard.
+- **Theme Changer**: Switch between light, dark, black-gold, blue-night, grey-ash, and Hellish Red themes via the dashboard.
 - **Message Copying**: Right-click any chat message to copy its content to clipboard.
 
 ### Security & Privacy
@@ -44,6 +44,26 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 - **No Third-party APIs**: Zero reliance on external AI services
 - **Secure Credentials**: Email passwords stored locally with restricted permissions
 - **Open Design**: Transparent codebase with clear data flow
+
+## Theme System
+
+Mindbase includes a comprehensive theme system that allows you to customize the visual appearance of the application. Themes can be switched at any time from the Settings page and persist via localStorage.
+
+### Available Themes
+- **Dark**: Classic dark theme with neutral accents
+- **Light**: Clean light theme for daytime use
+- **Black Gold**: Elegant dark theme with gold accents
+- **Blue Night**: Cool dark theme with blue highlights
+- **Grey Ash**: Sophisticated light theme with grey tones
+- **Hellish Red**: Dramatic dark theme with vibrant red accents
+
+### How to Change Themes
+1. Open the Settings page (click the gear icon in the dock)
+2. Select your preferred theme from the "Theme" dropdown
+3. The change applies immediately across the entire application
+4. Your selection is saved automatically and restored on future visits
+
+All themes follow the same design principles and maintain accessibility standards for text contrast and usability.
 
 ## Architecture
 
