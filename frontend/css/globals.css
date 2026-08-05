@@ -195,7 +195,9 @@
   --bg-raised: #f1f3f4;
   --bg-elevated: #e9ebed;
   --bg-hover: rgba(15, 23, 42, 0.03);
-  --bg-active: rgba(15, 23, 42, 0.06);
+  --bg-active: rgba(15, 23, 4, 0.06);
+
+  --border-subtle: rgba(15, 0.06);
 
   --border-subtle: rgba(15, 23, 42, 0.06);
   --border-mid: rgba(15, 23, 42, 0.10);
@@ -229,6 +231,49 @@
   /* Code block style for Grey Ash */
   --code-bg: #eef2f5;
   --code-border: rgba(15, 23, 42, 0.06);
+}
+
+:root[data-theme="hellish-red"] {
+  color-scheme: dark;
+  --bg-void: #080000;
+  --bg-surface: #120000;
+  --bg-raised: #1a0000;
+  --bg-elevated: #1f0000;
+  --bg-hover: rgba(255, 107, 107, 0.05);
+  --bg-active: rgba(255, 107, 107, 0.1);
+
+  --border-subtle: rgba(255, 107, 107, 0.08);
+  --border-mid: rgba(255, 107, 107, 0.12);
+  --border-strong: rgba(255, 107, 107, 0.18);
+
+  --text-primary: rgba(255, 255, 255, 0.9);
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-tertiary: rgba(255, 255, 255, 0.4);
+
+  --user-bubble: #1a0000;
+  --user-border: rgba(255, 107, 107, 0.16);
+  --assistant-bubble: #150000;
+  --assistant-border: rgba(255, 107, 107, 0.1);
+
+  --accent: #ff6b6b;
+  --accent-soft: rgba(255, 107, 107, 0.06);
+  --accent-border: rgba(255, 107, 107, 0.28);
+  --accent-ring: rgba(255, 107, 107, 0.2);
+
+  --ok: #ff9999;
+  --warning: #ffb3b3;
+  --danger: #ff5252;
+
+  --glass-bg: rgba(10, 0, 0, 0.7);
+  --glass-border: rgba(255, 107, 107, 0.12);
+  --context-menu-bg: rgba(18, 0, 0, 0.96);
+  --context-menu-border: rgba(255, 107, 107, 0.18);
+  --context-menu-shadow: 0 18px 44px -24px rgba(0, 0, 0, 0.85);
+  --context-menu-item-hover: rgba(255, 107, 107, 0.09);
+  --context-menu-item-text: rgba(249, 238, 214, 0.94);
+  /* Code block style for Hellish Red */
+  --code-bg: #120f09;
+  --code-border: rgba(255, 107, 107, 0.06);
 }
 
 :root[data-theme="light"] .dock-logo svg,
