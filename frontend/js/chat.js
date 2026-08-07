@@ -61,6 +61,11 @@ class ChatManager {
         this.setupMessageInput();
         this.setupMessageContextMenu();
         this.setupCodeBlockCopyButtons();
+        // Export button
+        const exportBtn = $('#exportConversationBtn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => this.exportCurrentConversation());
+        }
     }
 
     setupCodeBlockCopyButtons() {
@@ -748,6 +753,48 @@ class ChatManager {
             } catch {
                 // Non-critical — title just won't update in sidebar
             }
+        }
+    }
+
+    async exportCurrentConversation() {
+        if (!this.currentConversationId) {
+            toast('No conversation to export.', 'info');
+            return;
+        }
+
+        try {
+            const conversation = await API.getConversation(this.currentConversationId);
+            if (!conversation || !conversation.messages) {
+                toast('Conversation data not available.', 'error');
+                return;
+            }
+
+            // Build the text content
+            let text = `Conversation: ${conversation.title || 'Untitled'}\n`;
+            text += `Exported on: ${new Date().toLocaleString()}\n`;
+            text += '='.repeat(50) + '\n\n';
+
+            conversation.messages.forEach(msg => {
+                const role = msg.role === 'user' ? 'You' : 'AI';
+                const msgDate = msg.created_at || msg.timestamp;
+                const timestamp = msgDate ? new Date(msgDate).toLocaleString() : '';
+                text += `[${role}]${timestamp ? ` ${timestamp}` : ''}\n`;
+                text += `${msg.content}\n\n`;
+            });
+
+            // Create a blob and trigger download
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `conversation-${this.currentConversationId}-${new Date().toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Failed to export conversation:', err);
+            toast('Failed to export conversation.', 'error');
         }
     }
 }
