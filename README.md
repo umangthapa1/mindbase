@@ -35,9 +35,11 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 - **Real-time Chat**: Streaming responses with context awareness
 - **Model Switching**: Change AI models on-the-fly without restart
 - **Conversation History**: Persistent chat history with search
+- **Conversation Export**: Export individual chat conversations as formatted `.txt` files (including correct message timestamps and roles) directly from the chat header.
 - **Multi-modal Support**: Handle text, documents, and email content
 - **Theme Changer**: Switch between light, dark, black-gold, blue-night, grey-ash, and Hellish Red themes via the dashboard.
 - **Message Copying**: Right-click any chat message to copy its content to clipboard.
+- **Full Data Backup**: Export all application data (conversations, notes, tasks, and memories) as a single JSON backup file from the Settings page.
 
 ### Security & Privacy
 - **100% Local**: All data stays on your machine

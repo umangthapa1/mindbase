@@ -4,9 +4,14 @@ This directory contains JavaScript files for the frontend.
 
 ## Files
 
-- `api.js` - Functions for interacting with the backend API
-- `app.js` - Main application logic and initialization
-- `chat.js` - Chat interface functionality
+- `api.js` - Wrapper for backend API requests and service orchestration
+- `app.js` - Main application entrypoint, initialization, and routing
+- `chat.js` - Chat interface logic, context menu actions, and exporting conversations to `.txt` files
+- `dock.js` - Navigation dock/sidebar construction and state synchronization
+- `email.js` - Email client interface and message viewer logic
+- `theme.js` - System theme loader and selector utilities
+- `toast.js` - Toast notifications system for feedback
+- `utils.js` - Common helper functions, markdown rendering parser, and DOM selector shortcuts (`$` and `$$`)
 
 ## Conventions
 
