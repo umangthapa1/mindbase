@@ -117,8 +117,8 @@ mindbase/
 
 ```bash
 # Clone and enter directory
-git clone <repository-url>
-cd WorkSpaceMainFiles
+git clone https://github.com/umangthapa1/mindbase
+cd mindbase
 
 # Choose your startup method:
 # Linux/macOS:
