@@ -1,10 +1,11 @@
-<!DOCTYPE html>
+\<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Settings — Mindbase</title>
-  <script src="../js/theme.js?v=20260802"></script>
+<script src="../js/theme.js?v=20260802"></script>
+  <script src="../js/accent.js?v=20260802"></script>
   <link rel="stylesheet" href="../../css/globals.css?v=20260802">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
@@ -16,10 +17,86 @@
     input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--accent); border:2px solid var(--bg-void); box-shadow:0 0 0 1px var(--accent-border), 0 2px 6px var(--accent-soft); cursor:pointer; transition:transform 120ms var(--ease); }
     input[type="range"]::-webkit-slider-thumb:hover { transform:scale(1.15); }
     .range-val { font-size:12px; color:var(--text-tertiary); font-family:var(--mono); min-width:30px; text-align:right; }
-    .about-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border-subtle); font-size:12.5px; }
+.about-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border-subtle); font-size:12.5px; }
     .about-row:last-child { border-bottom:none; }
     .about-key { color:var(--text-tertiary); font-weight:300; }
     .about-val { color:var(--text-secondary); font-weight:300; font-family:var(--mono); font-size:12px; }
+
+    /* ── Accent Color swatches ── */
+    .accent-grid {
+      display:grid;
+      grid-template-columns:repeat(10, 1fr);
+      gap:8px;
+      margin-bottom:12px;
+    }
+    .accent-swatch {
+      position:relative;
+      aspect-ratio:1;
+      border-radius:8px;
+      border:1px solid var(--border-mid);
+      cursor:pointer;
+      padding:0;
+      transition:transform 120ms var(--ease), box-shadow 120ms var(--ease), border-color 120ms var(--ease);
+    }
+    .accent-swatch:hover { transform:scale(1.1); }
+    .accent-swatch.active {
+      box-shadow:0 0 0 2px var(--bg-void), 0 0 0 4px var(--accent-ring);
+      transform:scale(1.08);
+    }
+    .accent-swatch.active::after {
+      content:'✓';
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:#fff;
+      font-size:13px;
+      font-weight:600;
+      text-shadow:0 1px 2px rgba(0,0,0,0.6);
+    }
+    .accent-swatch.custom {
+      background:linear-gradient(135deg,#f6d365 0%,#fda085 25%,#f6a4c4 50%,#a18cd1 75%,#84fab0 100%);
+      color:#111317;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:14px;
+    }
+    .accent-custom-row {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:9px 12px;
+      border-radius:8px;
+      background:var(--bg-raised);
+      border:1px solid var(--border-subtle);
+      margin-bottom:10px;
+    }
+    .accent-custom-label { font-size:12px; color:var(--text-secondary); font-weight:300; }
+    .accent-custom-swatch {
+      width:18px;height:18px;border-radius:5px;
+      border:1px solid var(--border-mid);
+      background:var(--accent);
+    }
+.accent-custom-hex { font-size:12px; font-family:var(--mono); color:var(--text-primary); }
+    #resetAccentBtn {
+      background: var(--bg-raised);
+      border: 1px solid var(--border-mid);
+      color: var(--text-secondary);
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+    }
+    #resetAccentBtn:hover {
+      background: var(--bg-elevated);
+      border-color: var(--border-strong);
+      color: var(--text-primary);
+    }
+    @media (max-width:600px) {
+      .accent-grid { grid-template-columns:repeat(5, 1fr); }
+    }
   </style>
 </head>
 <body>
@@ -58,7 +135,7 @@
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-title">Appearance</div>
-      <div class="setting-row">
+<div class="setting-row">
         <div>
           <div class="setting-label">Theme</div>
           <div class="setting-desc">Choose an app-wide palette.</div>
@@ -71,6 +148,22 @@
           <option value="grey-ash">Grey Ash</option>
           <option value="hellish-red">Hellish Red</option>
         </select>
+      </div>
+    </div>
+
+    <!-- Accent Color -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Accent Color</div>
+      <div class="setting-desc" style="margin-bottom:14px">Highlight color across the app. Works with every theme.</div>
+      <div class="accent-grid" id="accentGrid"></div>
+<div class="accent-custom-row" id="accentCustomRow" hidden>
+        <span class="accent-custom-label">Custom</span>
+        <span class="accent-custom-swatch" id="accentCustomSwatch"></span>
+        <span class="accent-custom-hex" id="accentCustomHex">#8B5CF6</span>
+      </div>
+      <div style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div class="setting-desc" style="margin:0">Changes apply instantly.</div>
+        <button class="btn btn-ghost" id="resetAccentBtn" style="font-size:12px">Reset to default</button>
       </div>
     </div>
 
@@ -219,6 +312,94 @@
     localStorage.clear();
     window.location.href = '/';
   });
+
+/* ── Accent Color UI ── */
+  const accentGrid = document.getElementById('accentGrid');
+  const accentCustomRow = document.getElementById('accentCustomRow');
+  const accentCustomSwatch = document.getElementById('accentCustomSwatch');
+  const accentCustomHex = document.getElementById('accentCustomHex');
+  const resetAccentBtn = document.getElementById('resetAccentBtn');
+
+  // Hidden native color input used by the 🎨 custom swatch (kept out of view)
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.value = '#8B5CF6';
+  colorInput.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
+  colorInput.setAttribute('aria-hidden', 'true');
+  accentGrid.parentNode.appendChild(colorInput);
+
+  const presets = (window.MindbaseAccent?.accentPresets) || [];
+  const swatchEls = [];
+
+  function buildAccentGrid() {
+    accentGrid.innerHTML = '';
+    swatchEls.length = 0;
+
+    presets.forEach((p) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'accent-swatch';
+      btn.style.background = p.color;
+      btn.title = p.name;
+      btn.dataset.color = p.color;
+      btn.dataset.name = p.name;
+      btn.addEventListener('click', () => {
+        window.MindbaseAccent.setAccent(p.color);
+        renderAccentState();
+      });
+      accentGrid.appendChild(btn);
+      swatchEls.push(btn);
+    });
+
+    // Custom swatch
+    const custom = document.createElement('button');
+    custom.type = 'button';
+    custom.className = 'accent-swatch custom';
+    custom.title = 'Custom color';
+    custom.textContent = '🎨';
+    custom.addEventListener('click', () => {
+      colorInput.showPicker ? colorInput.showPicker() : colorInput.click();
+    });
+    accentGrid.appendChild(custom);
+    swatchEls.push(custom);
+    custom.dataset.custom = '1';
+  }
+
+  function renderAccentState() {
+    const active = window.MindbaseAccent.getStoredAccentState() || '';
+    const custom = window.MindbaseAccent.getStoredCustom() || '';
+
+    swatchEls.forEach((el) => {
+      const isActive = el.dataset.custom ? !active : (el.dataset.color === active);
+      el.classList.toggle('active', !!isActive);
+    });
+
+    const current = custom || active || '#8B5CF6';
+    accentCustomRow.hidden = false;
+    accentCustomSwatch.style.background = current;
+    accentCustomHex.textContent = current;
+    colorInput.value = current;
+  }
+
+  colorInput.addEventListener('input', (e) => {
+    window.MindbaseAccent.setCustomAccent(e.target.value);
+    renderAccentState();
+  });
+
+  resetAccentBtn.addEventListener('click', () => {
+    window.MindbaseAccent.resetAccent();
+    renderAccentState();
+  });
+
+  window.addEventListener('mindbase-accentchange', renderAccentState);
+
+  // Keep the theme select accent-aware (theme change re-derives default accent)
+  themeSelect.addEventListener('change', () => {
+    if (window.MindbaseAccent) window.MindbaseAccent.setAccent(window.MindbaseAccent.getStoredAccentState());
+  });
+
+  buildAccentGrid();
+  renderAccentState();
 
   loadModels();
   loadPrefs();

@@ -30,11 +30,15 @@
   --assistant-bubble: #151515;
   --assistant-border: rgba(255, 255, 255, 0.05);
 
-  /* Grayscale accents */
+/* Grayscale accents */
   --accent: #ffffff;
+  --accent-hover: #e6e6e6;
+  --accent-light: rgba(255, 255, 255, 0.15);
   --accent-soft: rgba(255, 255, 255, 0.06);
   --accent-border: rgba(255, 255, 255, 0.15);
   --accent-ring: rgba(255, 255, 255, 0.25);
+  --accent-glow: rgba(255, 255, 255, 0.25);
+  --accent-text: #111317;
 
   --ok: #e0e0e0;
   --warning: #d0d0d0;
@@ -2439,5 +2443,49 @@ button {
     scroll-behavior: auto !important;
   }
 
-  .dock-item:hover { transform: none; }
+.dock-item:hover { transform: none; }
+}
+
+/* ──────────────────────────────────────────
+   ACCENT ENHANCEMENTS (custom accent active)
+   accent.js sets [data-accent-active] on <html> when the user
+   picks a preset or custom accent. These rules make the accent
+   feel global by adding subtle glow/hover treatments to key
+   interactive elements. Default theme behavior is untouched.
+────────────────────────────────────────── */
+:root[data-accent-active] .dock-item.active {
+  box-shadow:
+    0 0 0 1px var(--accent-border) inset,
+    0 0 12px var(--accent-glow),
+    0 0 0 2px var(--accent-ring);
+}
+
+:root[data-accent-active] .dock-item.active::before {
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+:root[data-accent-active] .send-btn:hover {
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 12px var(--accent-glow);
+}
+
+:root[data-accent-active] .composer:focus-within {
+  border-color: var(--accent-border);
+  box-shadow:
+    0 0 0 1px var(--accent-soft) inset,
+    0 0 0 3px var(--accent-light),
+    0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-accent-active] a:hover {
+  text-shadow: 0 0 10px var(--accent-glow);
+}
+
+:root[data-accent-active] .toast--info { border-left-color: var(--accent); }
+
+:root[data-accent-active] .stat-card:hover {
+  border-color: var(--accent-border);
+}
+
+:root[data-accent-active] .conv-item.active {
+  box-shadow: inset 2px 0 0 var(--accent), 0 0 10px var(--accent-glow);
 }

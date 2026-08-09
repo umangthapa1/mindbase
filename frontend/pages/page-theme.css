@@ -295,6 +295,26 @@ select option { background: var(--bg-elevated); }
 
 .btn-primary:disabled { filter: none; box-shadow: none; }
 
+/* When a custom accent is active, color primary buttons with the accent.
+   Default theme behavior is untouched (this only applies under
+   [data-accent-active], set by accent.js when the user picks an accent). */
+:root[data-accent-active] .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow:
+    0 2px 10px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+:root[data-accent-active] .btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow:
+    0 4px 18px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
 .btn-ghost {
   background: transparent;
   border-color: var(--border-subtle);
