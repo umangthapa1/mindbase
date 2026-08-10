@@ -38,6 +38,7 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 - **Conversation Export**: Export individual chat conversations as formatted `.txt` files (including correct message timestamps and roles) directly from the chat header.
 - **Multi-modal Support**: Handle text, documents, and email content
 - **Theme Changer**: Switch between light, dark, black-gold, blue-night, grey-ash, and Hellish Red themes via the dashboard.
+- **Accent Color Selector**: Personalize the highlight color across all themes with 10 curated presets or a custom color picker — changes apply instantly and persist automatically.
 - **Message Copying**: Right-click any chat message to copy its content to clipboard.
 - **Full Data Backup**: Export all application data (conversations, notes, tasks, and memories) as a single JSON backup file from the Settings page.
 
@@ -66,6 +67,47 @@ Mindbase includes a comprehensive theme system that allows you to customize the 
 4. Your selection is saved automatically and restored on future visits
 
 All themes follow the same design principles and maintain accessibility standards for text contrast and usability.
+
+## Accent Color System
+
+Mindbase includes a global accent color selector that works **on top of any theme**, allowing you to personalize the highlight color used for buttons, links, focus rings, and interactive elements without changing the overall theme.
+
+### How It Works
+- The accent system overrides only the accent-related CSS variables (`--accent`, `--accent-hover`, `--accent-light`, `--accent-border`, `--accent-ring`, `--accent-glow`, `--accent-text`)
+- It persists across reloads via `localStorage`
+- Changes apply instantly — no reload or save button required
+- Each theme has a default accent; selecting "Reset to default" restores the theme's original accent
+- Works seamlessly with all six themes (Dark, Light, Black Gold, Blue Night, Grey Ash, Hellish Red)
+
+### Available Presets
+10 curated accent presets are provided:
+- **Blue** (`#3B82F6`)
+- **Purple** (`#8B5CF6`)
+- **Violet** (`#7C3AED`)
+- **Cyan** (`#06B6D4`)
+- **Green** (`#22C55E`)
+- **Emerald** (`#10B981`)
+- **Orange** (`#F97316`)
+- **Red** (`#EF4444`)
+- **Pink** (`#EC4899`)
+- **Yellow** (`#EAB308`)
+
+### Custom Color Picker
+In addition to presets, a **custom color picker** (🎨 button) lets you choose any hex color. The last custom color is remembered so you can easily return to it.
+
+### How to Change the Accent
+1. Open the Settings page (click the gear icon in the dock)
+2. Scroll to the **Accent Color** section
+3. Click any preset swatch to apply it instantly, or click the 🎨 button to pick a custom color
+4. Your selection is saved automatically and restored on future visits
+5. Click **Reset to default** to return to the theme's built-in accent
+
+### Technical Details
+- Implemented in `frontend/js/accent.js` as `window.MindbaseAccent`
+- Computes accessible text contrast (`--accent-text`) automatically (black or white) based on WCAG luminance
+- Generates hover, soft, border, ring, and glow variants from the base color
+- Cross-tab synchronization via `storage` events
+- Responds to theme changes — if no custom accent is active, switching themes re-derives the appropriate default accent
 
 ## Architecture
 
