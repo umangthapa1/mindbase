@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from datetime import datetime
 from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
@@ -23,12 +24,15 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from config import BASE_DIR
-from database import EmailDB
+from config import BASE_DIR, UPLOADS_DIR
+from database import EmailDB, EmailAttachmentDB
 
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = BASE_DIR / "data" / "email_config.json"
+ATTACHMENTS_DIR = UPLOADS_DIR / "email-attachments"
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+MAX_ATTACHMENTS_PER_EMAIL = 20
 
 
 def _restrict_perms() -> None:
@@ -89,7 +93,7 @@ class ImapService:
     # ── Connect / disconnect ────────────────────────────────
     def _open(self) -> imaplib.IMAP4_SSL:
         host = self.config.get("host") or _imap_host_for(self.config["email"])
-        client = imaplib.IMAP4_SSL(host)
+        client = imaplib.IMAP4_SSL(host, timeout=30)
         client.login(self.config["email"], self.config["password"])
         return client
 
@@ -103,7 +107,7 @@ class ImapService:
         # the server expects them without spaces.
         password_clean = password.replace(" ", "")
 
-        client = imaplib.IMAP4_SSL(host)
+        client = imaplib.IMAP4_SSL(host, timeout=30)
         try:
             client.login(address, password_clean)
         finally:
@@ -187,6 +191,7 @@ class ImapService:
                     pass
 
             text_body, html_body = self._extract_body(msg)
+            attachments = self._extract_attachments(msg)
             snippet = re.sub(r"\s+", " ", text_body).strip()[:160]
 
             return {
@@ -199,6 +204,7 @@ class ImapService:
                 "html_body": html_body,
                 "received_at": received_at,
                 "is_unread": is_unread,
+                "attachments": attachments,
             }
         except Exception as e:
             logger.warning("Email: failed to parse message %r: %s", num, e)
@@ -249,6 +255,29 @@ class ImapService:
         return text_raw.strip(), html_raw.strip()
 
     @staticmethod
+    def _extract_attachments(msg: email.message.Message) -> list[dict[str, Any]]:
+        """Extract bounded attachment payloads; files are written only after DB upsert."""
+        attachments = []
+        for part in msg.walk() if msg.is_multipart() else []:
+            if part.is_multipart() or "attachment" not in str(part.get("Content-Disposition") or "").lower():
+                continue
+            filename = part.get_filename()
+            if not filename:
+                continue
+            filename = ImapService._decode_header(filename).replace("\x00", "").strip()
+            # Display name only: storage names are generated server-side below.
+            filename = os.path.basename(filename)[:255] or "attachment"
+            payload = part.get_payload(decode=True) or b""
+            if not payload or len(payload) > MAX_ATTACHMENT_BYTES:
+                logger.warning("Email: skipped attachment %r (empty or exceeds %d bytes)", filename, MAX_ATTACHMENT_BYTES)
+                continue
+            attachments.append({"filename": filename, "content": payload, "content_type": part.get_content_type() or "application/octet-stream"})
+            if len(attachments) >= MAX_ATTACHMENTS_PER_EMAIL:
+                logger.warning("Email: attachment count capped at %d", MAX_ATTACHMENTS_PER_EMAIL)
+                break
+        return attachments
+
+    @staticmethod
     def _payload_text(part: email.message.Message) -> str:
         try:
             raw = part.get_payload(decode=True)
@@ -279,40 +308,56 @@ class ImapService:
         """Pull recent messages and upsert into EmailDB. Returns newly-added emails."""
         messages = self.fetch_recent_messages(max_results=max_results, unread_only=unread_only)
         new_emails: List[EmailDB] = []
+        written_paths = []
 
-        for m in messages:
-            existing = db.query(EmailDB).filter(EmailDB.gmail_id == m["gmail_id"]).first()
-            if existing:
-                changed = False
-                if existing.is_unread != m["is_unread"]:
-                    existing.is_unread = m["is_unread"]
-                    changed = True
-                # Backfill rich content for emails synced before html_body existed.
-                if m.get("html_body") and not (existing.html_body or "").strip():
-                    existing.html_body = m["html_body"][:200000]
-                    existing.body = m["body"][:10000]
-                    existing.snippet = m["snippet"]
-                    changed = True
-                if changed:
-                    db.commit()
-                continue
+        try:
+            for m in messages:
+                existing = db.query(EmailDB).filter(EmailDB.gmail_id == m["gmail_id"]).first()
+                if existing:
+                    if existing.is_unread != m["is_unread"]:
+                        existing.is_unread = m["is_unread"]
+                    # Backfill rich content for emails synced before html_body existed.
+                    if m.get("html_body") and not (existing.html_body or "").strip():
+                        existing.html_body = m["html_body"][:200000]
+                        existing.body = m["body"][:10000]
+                        existing.snippet = m["snippet"]
+                    continue
 
-            mail = EmailDB(
-                gmail_id=m["gmail_id"],
-                thread_id=m["thread_id"],
-                subject=m["subject"],
-                sender=m["sender"],
-                snippet=m["snippet"],
-                body=m["body"][:10000],
-                html_body=(m.get("html_body") or "")[:200000],
-                received_at=m["received_at"] or datetime.utcnow(),
-                is_unread=m["is_unread"],
-                processed=False,
-            )
-            db.add(mail)
-            new_emails.append(mail)
+                mail = EmailDB(
+                    gmail_id=m["gmail_id"],
+                    thread_id=m["thread_id"],
+                    subject=m["subject"],
+                    sender=m["sender"],
+                    snippet=m["snippet"],
+                    body=m["body"][:10000],
+                    html_body=(m.get("html_body") or "")[:200000],
+                    received_at=m["received_at"] or datetime.utcnow(),
+                    is_unread=m["is_unread"],
+                    processed=False,
+                )
+                db.add(mail)
+                db.flush()
+                for attachment in m.get("attachments", []):
+                    suffix = os.path.splitext(attachment["filename"])[1][:20]
+                    stored_name = f"{uuid.uuid4()}{suffix}"
+                    ATTACHMENTS_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    path = ATTACHMENTS_DIR / stored_name
+                    path.write_bytes(attachment["content"])
+                    try:
+                        os.chmod(path, 0o600)
+                    except OSError:
+                        pass
+                    written_paths.append(path)
+                    db.add(EmailAttachmentDB(email_id=mail.id, filename=attachment["filename"], stored_name=stored_name, content_type=attachment["content_type"], size=len(attachment["content"])))
+                new_emails.append(mail)
 
-        db.commit()
+            db.commit()
+        except Exception:
+            db.rollback()
+            for path in written_paths:
+                try: path.unlink(missing_ok=True)
+                except OSError: pass
+            raise
         for e in new_emails:
             db.refresh(e)
         return new_emails

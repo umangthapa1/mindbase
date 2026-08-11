@@ -5,16 +5,17 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import datetime
 from pathlib import Path
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import json
 import re as _re
 import logging
 import asyncio
+import threading
 from typing import Optional
 
-from config import API_HOST, API_PORT, DEFAULT_MODEL, BASE_DIR, CORS_ORIGINS, CORS_ALLOW_CREDENTIALS
-from imap_service import email_service, serialize_email
-from database import init_db, get_db, ConversationDB, MessageDB, SessionLocal, NoteDB, TaskDB, CalendarEventDB, EmailDB
+from config import API_HOST, API_PORT, DEFAULT_MODEL, BASE_DIR, CORS_ORIGINS, CORS_ALLOW_CREDENTIALS, EMAIL_AUTO_SYNC, EMAIL_AUTO_SYNC_INTERVAL_SECONDS, EMAIL_AUTO_SYNC_MAX_RESULTS
+from imap_service import email_service, serialize_email, ATTACHMENTS_DIR
+from database import init_db, get_db, ConversationDB, MessageDB, SessionLocal, NoteDB, TaskDB, CalendarEventDB, EmailDB, AutomationRuleDB, AutomationRunDB, EmailAttachmentDB
 from tasks_service import task_manager, serialize_task, serialize_event, _parse_date_string
 from models import (
     Conversation, ConversationCreate, ConversationUpdate, ChatRequest, ChatResponse, Message,
@@ -22,8 +23,9 @@ from models import (
     NoteCreate, NoteUpdate, TaskCreate, TaskUpdate,
     CalendarEventCreate, CalendarEventUpdate,
     ResearchRequest, ResearchSaveRequest, DocumentAsk,
-    EmailConnect, EmailSync,
+    EmailConnect, EmailSync, AutomationRuleCreate, AutomationRuleUpdate,
 )
+from automations import EMAIL_ACTIONS, process_new_emails, serialize_rule, serialize_run
 from ollama import ollama_client, aclose as _ollama_aclose
 from memory import memory_manager
 from documents import document_manager
@@ -31,6 +33,35 @@ from research import research_agent
 from intelligence import chat_intelligence
 
 logger = logging.getLogger(__name__)
+_email_sync_lock = threading.Lock()
+
+
+def _sync_and_process_email(db: Session, max_results: int, unread_only: bool) -> tuple[list[EmailDB], list[dict]]:
+    """Run the single shared sync path; the lock prevents duplicate IMAP work."""
+    with _email_sync_lock:
+        new_emails = email_service.sync_inbox(db, max_results=max_results, unread_only=unread_only)
+        runs = process_new_emails(db, new_emails)
+        return new_emails, runs
+
+
+def _background_email_sync_once() -> None:
+    if not email_service.is_connected():
+        return
+    db = SessionLocal()
+    try:
+        new_emails, runs = _sync_and_process_email(db, EMAIL_AUTO_SYNC_MAX_RESULTS, False)
+        logger.info("Background email sync completed: %d new email(s), %d automation run(s)", len(new_emails), len(runs))
+    except Exception:
+        logger.exception("Background email sync failed; it will be retried on the next interval")
+    finally:
+        db.close()
+
+
+async def _auto_email_sync_loop() -> None:
+    """Perform an immediate non-blocking sync, then continue at the configured interval."""
+    while True:
+        await asyncio.to_thread(_background_email_sync_once)
+        await asyncio.sleep(EMAIL_AUTO_SYNC_INTERVAL_SECONDS)
 
 # ── Email context helpers ──────────────────────────────────────────────────
 _EMAIL_PATTERNS = [
@@ -220,7 +251,15 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(ensure_embedding_model_present())
     else:
         logger.error("Could not connect to Ollama at %s", ollama_client.host)
+    auto_sync_task = None
+    if EMAIL_AUTO_SYNC:
+        auto_sync_task = asyncio.create_task(_auto_email_sync_loop(), name="mindbase-email-auto-sync")
+        logger.info("Background email auto-sync enabled (every %d seconds)", EMAIL_AUTO_SYNC_INTERVAL_SECONDS)
     yield
+    if auto_sync_task:
+        auto_sync_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await auto_sync_task
     # Shutdown: close the shared pooled Ollama HTTP client so its keep-alive
     # connections are released cleanly on reload/exit.
     try:
@@ -1030,7 +1069,7 @@ def email_status():
     return {"connected": email_service.is_connected(), "email": email_service.account_email()}
 
 @app.post("/api/email/connect")
-def email_connect(data: EmailConnect):
+async def email_connect(data: EmailConnect):
     address = (data.email or "").strip()
     password = (data.app_password or "").strip()
     host = (data.host or "").strip()
@@ -1044,6 +1083,8 @@ def email_connect(data: EmailConnect):
         if "AUTHENTICATIONFAILED" in msg.upper() or "Invalid credentials" in msg:
             msg = "Sign-in failed. Make sure you used an app password, not your normal password."
         raise HTTPException(status_code=401, detail=msg)
+    if EMAIL_AUTO_SYNC:
+        asyncio.create_task(asyncio.to_thread(_background_email_sync_once))
     return {"connected": True, "email": email_service.account_email()}
 
 @app.post("/api/email/disconnect")
@@ -1060,10 +1101,70 @@ def sync_email(data: Optional[EmailSync] = None, db: Session = Depends(get_db)):
     max_results = payload.max_results
     unread_only = payload.unread_only
     try:
-        new_emails = email_service.sync_inbox(db, max_results=max_results, unread_only=unread_only)
+        new_emails, runs = _sync_and_process_email(db, max_results=max_results, unread_only=unread_only)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not reach your mail server: {e}")
-    return {"new_count": len(new_emails), "emails": [serialize_email(e) for e in new_emails]}
+    return {"new_count": len(new_emails), "emails": [serialize_email(e) for e in new_emails], "automation_runs": runs}
+
+
+# ── Automation endpoints ────────────────────────────────────────────────────
+@app.get("/api/automations")
+def list_automations(db: Session = Depends(get_db)):
+    rules = db.query(AutomationRuleDB).order_by(AutomationRuleDB.created_at.desc()).all()
+    return {"automations": [serialize_rule(rule) for rule in rules]}
+
+@app.post("/api/automations", status_code=201)
+def create_automation(data: AutomationRuleCreate, db: Session = Depends(get_db)):
+    if data.trigger != "email":
+        raise HTTPException(status_code=422, detail="Only email triggers are supported currently.")
+    invalid = set(data.actions) - EMAIL_ACTIONS
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Unsupported email actions: {', '.join(sorted(invalid))}")
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Automation name cannot be blank.")
+    rule = AutomationRuleDB(name=name, trigger=data.trigger, condition=data.condition.strip(), actions=json.dumps(data.actions), details=data.details.strip(), enabled=data.enabled)
+    db.add(rule); db.commit(); db.refresh(rule)
+    return serialize_rule(rule)
+
+@app.put("/api/automations/{rule_id}")
+def update_automation(rule_id: str, data: AutomationRuleUpdate, db: Session = Depends(get_db)):
+    rule = db.query(AutomationRuleDB).filter_by(id=rule_id).first()
+    if not rule: raise HTTPException(status_code=404, detail="Automation not found")
+    update = data.model_dump(exclude_unset=True)
+    if "name" in update and not update["name"].strip():
+        raise HTTPException(status_code=422, detail="Automation name cannot be blank.")
+    if "actions" in update:
+        invalid = set(update["actions"]) - EMAIL_ACTIONS
+        if not update["actions"] or invalid: raise HTTPException(status_code=422, detail="Provide supported automation actions.")
+        rule.actions = json.dumps(update.pop("actions"))
+    for field in ("name", "condition", "details", "enabled"):
+        if field in update: setattr(rule, field, update[field].strip() if isinstance(update[field], str) else update[field])
+    db.commit(); db.refresh(rule)
+    return serialize_rule(rule)
+
+@app.delete("/api/automations/{rule_id}")
+def delete_automation(rule_id: str, db: Session = Depends(get_db)):
+    rule = db.query(AutomationRuleDB).filter_by(id=rule_id).first()
+    if not rule: raise HTTPException(status_code=404, detail="Automation not found")
+    db.delete(rule); db.commit()
+    return {"status": "deleted", "id": rule_id}
+
+@app.get("/api/automations/done")
+def list_completed_automations(limit: int = 50, db: Session = Depends(get_db)):
+    limit = max(1, min(limit, 200))
+    runs = db.query(AutomationRunDB).order_by(AutomationRunDB.created_at.desc()).limit(limit).all()
+    return {"runs": [serialize_run(run, db) for run in runs], "count": len(runs)}
+
+@app.get("/api/automations/attachments/{attachment_id}/download")
+def download_automation_attachment(attachment_id: str, db: Session = Depends(get_db)):
+    attachment = db.query(EmailAttachmentDB).filter_by(id=attachment_id).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = (ATTACHMENTS_DIR / attachment.stored_name).resolve()
+    if path.parent != ATTACHMENTS_DIR.resolve() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Attachment file is unavailable")
+    return FileResponse(path, media_type=attachment.content_type, filename=attachment.filename)
 
 @app.get("/api/email/inbox")
 def list_inbox(unread_only: bool = False, limit: int = 50, db: Session = Depends(get_db)):

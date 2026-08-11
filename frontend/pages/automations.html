@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automations — Mindbase</title>
+  <script src="../js/theme.js?v=20260802"></script>
+  <script src="../js/accent.js?v=20260802"></script>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
+  <link rel="stylesheet" href="page-theme.css?v=20260728">
+  <style>
+    .automation-intro { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:28px; }
+    .automation-intro h1 { font-size:24px; font-weight:400; letter-spacing:-.03em; color:var(--text-primary); margin:0 0 8px; }
+    .automation-intro p { margin:0; color:var(--text-secondary); font-size:13px; line-height:1.55; max-width:620px; }
+    .automation-note { font-size:11px; line-height:1.45; color:var(--text-tertiary); padding:9px 11px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-raised); max-width:265px; }
+    .builder-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .builder-step { padding:16px; background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:10px; }
+    .step-label { display:flex; align-items:center; gap:7px; color:var(--text-tertiary); font-size:10px; text-transform:uppercase; letter-spacing:.07em; font-weight:500; margin-bottom:13px; }
+    .step-number { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; border-radius:50%; background:var(--accent-soft); color:var(--text-primary); font-size:10px; }
+    .action-options { display:flex; flex-direction:column; gap:8px; }
+    .action-option { display:flex; align-items:center; gap:9px; cursor:pointer; color:var(--text-secondary); font-size:12px; }
+    .action-option input { width:14px; height:14px; accent-color:var(--accent); }
+    .rule-list { display:flex; flex-direction:column; gap:10px; }
+    .rule-card { padding:17px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:11px; }
+    .rule-top { display:flex; align-items:center; gap:10px; }
+    .rule-icon { display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:var(--accent-soft); border:1px solid var(--accent-border); color:var(--text-primary); flex-shrink:0; }
+    .rule-icon svg { width:16px; height:16px; }
+    .rule-name { font-size:13px; color:var(--text-primary); font-weight:500; }
+    .rule-summary { margin:13px 0 0 40px; padding:10px 12px; border-left:2px solid var(--accent-border); color:var(--text-secondary); font-size:12px; line-height:1.5; background:var(--bg-raised); border-radius:0 6px 6px 0; }
+    .rule-footer { margin:13px 0 0 40px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .status { font-size:10px; padding:3px 7px; border-radius:5px; border:1px solid var(--border-subtle); color:var(--text-tertiary); }
+    .status.on { color:var(--ok); border-color:color-mix(in srgb, var(--ok) 38%, var(--border-subtle)); background:color-mix(in srgb, var(--ok) 9%, transparent); }
+    .rule-spacer { flex:1; }
+    .mini-btn { background:transparent; border:0; color:var(--text-tertiary); font:inherit; font-size:11px; cursor:pointer; padding:4px; }
+    .mini-btn:hover { color:var(--text-primary); }
+    .empty-rules { text-align:center; color:var(--text-tertiary); padding:32px 16px; border:1px dashed var(--border-mid); border-radius:10px; font-size:12px; }
+    .done-item { padding:14px 16px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; }
+    .done-title { font-size:12px; color:var(--text-primary); font-weight:500; }
+    .done-meta { font-size:11px; color:var(--text-tertiary); margin-top:4px; }
+    .artifact-list { display:flex; gap:7px; flex-wrap:wrap; margin-top:10px; }
+    .artifact { font-size:11px; color:var(--text-secondary); border:1px solid var(--border-subtle); border-radius:6px; padding:4px 7px; text-decoration:none; background:var(--bg-raised); }
+    .artifact:hover { color:var(--text-primary); border-color:var(--border-mid); }
+    @media (max-width:768px) { .automation-intro { flex-direction:column; gap:14px; } .automation-note { max-width:none; } .builder-grid { grid-template-columns:1fr; } .rule-summary, .rule-footer { margin-left:0; } }
+  </style>
+</head>
+<body>
+<script src="../js/dock.js?v=20260811"></script>
+<div class="page-root">
+  <header class="page-header"><span class="page-title">Automations</span><a href="/" class="back-link">Chat</a></header>
+  <main class="page-content narrow">
+    <div class="automation-intro">
+      <div><h1>Automated requests</h1><p>Create simple rules that turn incoming information into useful work. Choose a trigger, describe what to look for, then select what Mindbase should do.</p></div>
+      <div class="automation-note">Rules are saved on this device. Execution is ready to connect to the email and task services next.</div>
+    </div>
+
+    <section class="card" style="margin-bottom:30px">
+      <div class="card-title">Create a rule</div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div><label class="field-label" for="ruleName">Rule name</label><input id="ruleName" type="text" placeholder="e.g. Process vendor invoices"></div>
+        <div class="builder-grid">
+          <div class="builder-step">
+            <div class="step-label"><span class="step-number">1</span> When this happens</div>
+            <label class="field-label" for="ruleTrigger">Trigger</label>
+            <select id="ruleTrigger"><option value="email">An email arrives</option><option value="document">A document is added</option><option value="task">A task is completed</option></select>
+            <label class="field-label" for="ruleCondition" style="margin-top:12px">Only if it matches</label>
+            <input id="ruleCondition" type="text" placeholder="e.g. has an invoice or PDF attachment">
+          </div>
+          <div class="builder-step">
+            <div class="step-label"><span class="step-number">2</span> Do this</div>
+            <div class="action-options">
+              <label class="action-option"><input type="checkbox" name="action" value="save" checked> Save attachments</label>
+              <label class="action-option"><input type="checkbox" name="action" value="task" checked> Create a task</label>
+              <label class="action-option"><input type="checkbox" name="action" value="tag" checked> Add a tag</label>
+              <label class="action-option"><input type="checkbox" name="action" value="notify"> Send a notification</label>
+            </div>
+            <label class="field-label" for="ruleDetails" style="margin-top:12px">Details (optional)</label>
+            <input id="ruleDetails" type="text" placeholder="e.g. Tag as finance; task due in 3 days">
+          </div>
+        </div>
+        <button class="btn btn-primary" id="createRuleBtn">Create automation</button>
+      </div>
+    </section>
+
+    <div class="section-label">Your rules</div>
+    <section id="rulesList" class="rule-list"></section>
+    <div class="section-label" style="margin-top:30px">Done</div>
+    <section id="doneList" class="rule-list"><div class="empty-rules">Loading completed automations…</div></section>
+  </main>
+</div>
+<script src="../js/toast.js"></script>
+<script>
+  const actionLabels = { save: 'save attachment', task: 'create task', tag: 'add tag', notify: 'send notification' };
+  const triggerLabels = { email: 'an email arrives', document: 'a document is added', task: 'a task is completed' };
+  const $ = (id) => document.getElementById(id);
+  let rules = [];
+  const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+  const lightning = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5 4.8 11h4.7L8.5 17.5 15.2 9h-4.7z"/></svg>';
+
+  function renderRules() {
+    const list = $('rulesList');
+    if (!rules.length) { list.innerHTML = '<div class="empty-rules">No automations yet. Start with the invoice workflow above.</div>'; return; }
+    list.innerHTML = rules.map(rule => {
+      const actions = rule.actions.map(a => actionLabels[a]).join(', ') || 'do nothing';
+      const detail = rule.details ? ` ${esc(rule.details)}.` : '';
+      return `<article class="rule-card"><div class="rule-top"><span class="rule-icon">${lightning}</span><div class="rule-name">${esc(rule.name)}</div><span class="rule-spacer"></span><span class="status ${rule.enabled ? 'on' : ''}">${rule.enabled ? 'Active' : 'Paused'}</span></div><div class="rule-summary">When ${triggerLabels[rule.trigger]}${rule.condition ? ` and ${esc(rule.condition)}` : ''}, ${actions}.${detail}</div><div class="rule-footer"><button class="mini-btn" data-toggle="${rule.id}">${rule.enabled ? 'Pause' : 'Enable'}</button><button class="mini-btn" data-test="${rule.id}">Run test</button><button class="mini-btn" data-delete="${rule.id}">Delete</button></div></article>`;
+    }).join('');
+    list.querySelectorAll('[data-toggle]').forEach(btn => btn.onclick = async () => {
+      const rule = rules.find(r => r.id === btn.dataset.toggle);
+      try { const response = await fetch(`/api/automations/${rule.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ enabled: !rule.enabled }) }); if (!response.ok) throw new Error(); rule.enabled = !rule.enabled; renderRules(); toast(rule.enabled ? 'Automation enabled' : 'Automation paused', 'ok'); } catch (_) { toast('Could not update automation.', 'error'); }
+    });
+    list.querySelectorAll('[data-delete]').forEach(btn => btn.onclick = async () => {
+      try { const response = await fetch(`/api/automations/${btn.dataset.delete}`, { method:'DELETE' }); if (!response.ok) throw new Error(); rules = rules.filter(r => r.id !== btn.dataset.delete); renderRules(); toast('Automation removed', 'info'); } catch (_) { toast('Could not remove automation.', 'error'); }
+    });
+    list.querySelectorAll('[data-test]').forEach(btn => btn.onclick = () => toast('Rules run automatically when new email is synced.', 'info'));
+  }
+
+  async function loadCompleted() {
+    const list = $('doneList');
+    try {
+      const response = await fetch('/api/automations/done'); const data = await response.json();
+      if (!response.ok) throw new Error();
+      if (!data.runs?.length) { list.innerHTML = '<div class="empty-rules">Completed automations will appear here after an email sync.</div>'; return; }
+      list.innerHTML = data.runs.map(run => {
+        const email = run.email || {}; const rule = run.rule || {}; const when = new Date(run.created_at).toLocaleString();
+        const artifacts = run.artifacts.map(item => {
+          if (item.kind === 'attachment') return `<a class="artifact" href="/api/automations/attachments/${item.attachment_id}/download">File: ${esc(item.label)}</a>`;
+          if (item.kind === 'task') return `<a class="artifact" href="/pages/tasks.html">Task: ${esc(item.label)}</a>`;
+          return `<span class="artifact">${item.kind === 'tag' ? 'Tagged' : 'Notification'}: ${esc(item.label)}</span>`;
+        }).join('');
+        return `<article class="done-item"><div class="done-title">${esc(rule.name || 'Deleted automation')}</div><div class="done-meta">${esc(email.subject || 'Email unavailable')} · ${esc(email.sender || '')} · ${when}</div><div class="artifact-list">${artifacts || '<span class="artifact">Completed</span>'}</div></article>`;
+      }).join('');
+    } catch (_) { list.innerHTML = '<div class="empty-rules">Could not load completed automations.</div>'; }
+  }
+
+  $('createRuleBtn').onclick = async () => {
+    const name = $('ruleName').value.trim(); const condition = $('ruleCondition').value.trim(); const details = $('ruleDetails').value.trim();
+    const actions = [...document.querySelectorAll('input[name="action"]:checked')].map(input => input.value);
+    if (!name) { toast('Give this automation a name.', 'error'); return; }
+    if (!actions.length) { toast('Choose at least one action.', 'error'); return; }
+    try {
+      const response = await fetch('/api/automations', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ name, trigger: $('ruleTrigger').value, condition, details, actions, enabled: true }) });
+      const rule = await response.json(); if (!response.ok) throw new Error(rule.detail || 'Could not create automation.');
+      rules.unshift(rule); $('ruleName').value = ''; $('ruleCondition').value = ''; $('ruleDetails').value = ''; document.querySelectorAll('input[name="action"]').forEach(input => input.checked = ['save', 'task', 'tag'].includes(input.value)); renderRules(); toast('Automation created', 'ok');
+    } catch (error) { toast(error.message || 'Could not create automation.', 'error'); }
+  };
+  (async () => { try { const response = await fetch('/api/automations'); const data = await response.json(); if (!response.ok) throw new Error(); rules = data.automations || []; renderRules(); } catch (_) { $('rulesList').innerHTML = '<div class="empty-rules">Could not load automations. Check that the backend is running.</div>'; } loadCompleted(); })();
+</script>
+</body>
+</html>

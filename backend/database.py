@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, Boolean, ForeignKey, Table
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, Boolean, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -106,7 +106,60 @@ class EmailDB(Base):
     received_at = Column(DateTime, nullable=True)
     is_unread = Column(Boolean, default=True)
     processed = Column(Boolean, default=False)  # whether task/memory extraction has run
+    tags = Column(String, default="")
     synced_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AutomationRuleDB(Base):
+    __tablename__ = "automation_rules"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    trigger = Column(String, nullable=False, default="email")
+    condition = Column(Text, default="")
+    actions = Column(Text, nullable=False, default="[]")  # JSON list
+    details = Column(Text, default="")
+    enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AutomationRunDB(Base):
+    __tablename__ = "automation_runs"
+    __table_args__ = (UniqueConstraint("rule_id", "email_id", name="uq_automation_run_rule_email"),)
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    rule_id = Column(String, ForeignKey("automation_rules.id"), nullable=False, index=True)
+    email_id = Column(String, ForeignKey("emails.id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="completed")
+    result = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailAttachmentDB(Base):
+    __tablename__ = "email_attachments"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email_id = Column(String, ForeignKey("emails.id"), nullable=False, index=True)
+    filename = Column(String, nullable=False)
+    stored_name = Column(String, nullable=False, unique=True)
+    content_type = Column(String, default="application/octet-stream")
+    size = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AutomationArtifactDB(Base):
+    __tablename__ = "automation_artifacts"
+    __table_args__ = (UniqueConstraint("run_id", "attachment_id", name="uq_automation_artifact_run_attachment"),)
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    run_id = Column(String, ForeignKey("automation_runs.id"), nullable=False, index=True)
+    email_id = Column(String, ForeignKey("emails.id"), nullable=False, index=True)
+    attachment_id = Column(String, ForeignKey("email_attachments.id"), nullable=True, index=True)
+    task_id = Column(String, ForeignKey("tasks.id"), nullable=True, index=True)
+    kind = Column(String, nullable=False)  # attachment, task, tag, notification
+    label = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 def _migrate_sqlite():
@@ -123,6 +176,9 @@ def _migrate_sqlite():
         if "html_body" not in existing:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE emails ADD COLUMN html_body TEXT DEFAULT ''"))
+        if "tags" not in existing:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE emails ADD COLUMN tags TEXT DEFAULT ''"))
 
     # ── Hot-path indexes ────────────────────────────────────────────────
     # These back the per-turn reads on the chat prepare path and the schedule

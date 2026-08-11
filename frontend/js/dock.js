@@ -42,6 +42,8 @@
       `<rect x="3" y="4" width="14" height="13" rx="2"/><line x1="7" y1="9" x2="13" y2="9"/><line x1="7" y1="12.5" x2="10" y2="12.5"/>`],
     ['agents', 'Agents', '/pages/agents.html',
       `<polygon points="10 2 13.5 8 18 9 14 13 15 18 10 15.5 5 18 6 13 2 9 6.5 8"/>`],
+    ['automations', 'Automations', '/pages/automations.html',
+      `<path d="M11.5 2.5 4.8 11h4.7L8.5 17.5 15.2 9h-4.7z"/>`],
   ];
 
   const SETTINGS = ['settings', 'Settings', '/pages/settings.html',

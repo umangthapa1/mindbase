@@ -170,3 +170,20 @@ class EmailConnect(BaseModel):
 class EmailSync(BaseModel):
     max_results: int = 20
     unread_only: bool = False
+
+
+class AutomationRuleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    trigger: str = "email"
+    condition: str = ""
+    actions: List[str] = Field(min_length=1)
+    details: str = ""
+    enabled: bool = True
+
+
+class AutomationRuleUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    condition: Optional[str] = None
+    actions: Optional[List[str]] = None
+    details: Optional[str] = None
+    enabled: Optional[bool] = None

@@ -22,6 +22,12 @@ DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "mistral")
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
+# Mail sync runs in the background so application startup and page requests are
+# never held up by a remote IMAP server. Set EMAIL_AUTO_SYNC=false to disable.
+EMAIL_AUTO_SYNC = os.getenv("EMAIL_AUTO_SYNC", "true").strip().lower() in {"1", "true", "yes", "on"}
+EMAIL_AUTO_SYNC_INTERVAL_SECONDS = max(60, int(os.getenv("EMAIL_AUTO_SYNC_INTERVAL_SECONDS", "300")))
+EMAIL_AUTO_SYNC_MAX_RESULTS = max(1, min(100, int(os.getenv("EMAIL_AUTO_SYNC_MAX_RESULTS", "20"))))
+
 # CORS: comma-separated allow-list in CORS_ORIGINS (e.g.
 # "http://localhost:8000,http://127.0.0.1:8000,https://app.example.com").
 # When set, credentials are allowed. When unset (default) we fall back to a
