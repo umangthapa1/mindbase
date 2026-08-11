@@ -26,6 +26,8 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 
 ### Productivity Tools
 - **Email Integration**: Full IMAP support for Gmail and other email providers
+- **Email Automations**: Local rules that react to new mail by saving attachments, creating tasks, tagging messages, and recording notification events
+- **Automation History**: A Done view with completed runs, source emails, created tasks, and downloadable saved files
 - **Task Management**: Create, schedule, and track tasks with natural language
 - **Calendar Integration**: Calendar view with task/event synchronization
 - **Notes System**: Rich text notes with tagging and memory integration
@@ -218,8 +220,19 @@ All configuration is optional with sensible defaults. To customize:
 | `API_HOST` | `127.0.0.1` | API server bind address |
 | `API_PORT` | `8000` | API server port |
 | `CORS_ORIGINS` | *(unset)* | Comma-separated allow-list for CORS |
+| `EMAIL_AUTO_SYNC` | `true` | Automatically sync a connected mailbox in the background |
+| `EMAIL_AUTO_SYNC_INTERVAL_SECONDS` | `300` | Interval between background mailbox syncs (minimum: 60 seconds) |
+| `EMAIL_AUTO_SYNC_MAX_RESULTS` | `20` | Maximum messages examined by each automatic sync |
 
 Email credentials are stored in `backend/data/email_config.json` with file permissions set to `600` (owner-only read/write).
+
+## Email Automations
+
+Automations run entirely on your machine after new messages are synced from IMAP. Create a rule from **Automations** by choosing an email condition and one or more actions: save attachments, create a follow-up task, tag the email, or record a notification event.
+
+The backend starts without waiting for the mailbox, then syncs a previously connected account in the background. It also starts an immediate background sync after an account is connected. Manual and automatic syncs share a lock to prevent overlapping runs.
+
+Each rule is idempotent per email: the same rule cannot create duplicate tasks or artifacts for the same message. Attachments are saved locally in `uploads/email-attachments/`; files are capped at 25 MB each and 20 attachments per email. Completed work appears in **Automations → Done**, where saved files can be downloaded.
 
 ## Project Structure
 
@@ -247,6 +260,7 @@ The backend consists of these key modules:
 ### Productivity Services
 - **[tasks_service.py](./docs/backend/tasks_service.py.md)**: Task management, calendar, and natural language date parsing
 - **[imap_service.py](./docs/backend/imap_service.py.md)**: IMAP email synchronization (SSL/TLS support)
+- **automations.py**: Deterministic email-rule matching, action execution, artifact tracking, and run serialization
 
 ### Supporting Modules
 - Various utility modules and test files
@@ -266,6 +280,7 @@ The frontend is a vanilla JavaScript SPA with no build framework:
   - [memory.html](./docs/frontend/pages/memory.html.md): Memory/browser interface
   - [research.html](./docs/frontend/pages/research.html.md): Research agent controls
   - [agents.html](./docs/frontend/pages/agents.html.md): AI agent configuration
+  - `automations.html`: Rule builder and Done history for email automations
   - [settings.html](./docs/frontend/pages/settings.html.md): Application settings
   - [agents.html](./docs/frontend/pages/agents.html.md): AI agent configuration
 

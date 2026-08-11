@@ -10,6 +10,8 @@ This directory contains the frontend (client-side) code for the Mindbase AI appl
 - `js/` - JavaScript files
 - `pages/` - Individual HTML pages for different views
 
+The Automations page stores and manages email rules through the backend API. Its Done section displays completed runs and links to locally saved attachment downloads.
+
 ## Technologies
 
 - Vanilla JavaScript (no frameworks)
