@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager, suppress
@@ -113,6 +114,10 @@ def _is_email_query(message: str, history=None) -> bool:
     # A short follow-up referencing emails that were just listed.
     if _history_shows_emails(history) and _EMAIL_FOLLOWUP.search(msg):
         return True
+    # Keep email context for natural continuations such as "or Google?" and
+    # "what about Reddit?" after an inbox search.
+    if _history_shows_emails(history) and _re.match(r"^(?:or|and|what about)\s+\S", msg.strip()):
+        return True
     return False
 
 def _extract_email_search_terms(message: str) -> dict:
@@ -146,6 +151,12 @@ def _extract_email_search_terms(message: str) -> dict:
     if about_match:
         result["subject_keywords"] = about_match.group(1).strip().split()
 
+    # A concise continuation after an email query, for example "or google?",
+    # is a topic search even though it contains no explicit email noun.
+    continuation = _re.match(r"^(?:or|and|what about)\s+(.+?)[?!.,]*$", msg.strip())
+    if continuation and not result["sender"] and not result["subject_keywords"]:
+        result["subject_keywords"] = continuation.group(1).strip().split()
+
     # quantity hints
     num_match = _re.search(r'\b(\d+)\s+email', msg)
     if num_match:
@@ -156,6 +167,21 @@ def _extract_email_search_terms(message: str) -> dict:
         result["limit"] = 20
 
     return result
+
+
+def _email_term_variants(term: str) -> set[str]:
+    """Return conservative singular/plural variants for local email search."""
+    term = term.strip().lower()
+    if len(term) <= 3:
+        return {term}
+    variants = {term}
+    if term.endswith("ies") and len(term) > 4:
+        variants.add(term[:-3] + "y")
+    elif term.endswith("s") and not term.endswith("ss"):
+        variants.add(term[:-1])
+    else:
+        variants.add(term + "s")
+    return {variant for variant in variants if variant}
 
 def _build_email_context(db: Session, message: str) -> str:
     """Query locally synced EmailDB and return a formatted context block.
@@ -173,12 +199,20 @@ def _build_email_context(db: Session, message: str) -> str:
         # Match the term against the sender OR the subject (covers "from leetcode"
         # as well as "the puzzle one").
         like = f"%{filters['sender']}%"
-        q = q.filter(EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like))
+        q = q.filter(
+            EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like) |
+            EmailDB.snippet.ilike(like) | EmailDB.body.ilike(like)
+        )
     if filters["subject_keywords"]:
         for kw in filters["subject_keywords"][:2]:
-            q = q.filter(
-                EmailDB.subject.ilike(f"%{kw}%") | EmailDB.snippet.ilike(f"%{kw}%")
-            )
+            variants = _email_term_variants(kw)
+            q = q.filter(or_(*[
+                EmailDB.sender.ilike(f"%{term}%") |
+                EmailDB.subject.ilike(f"%{term}%") |
+                EmailDB.snippet.ilike(f"%{term}%") |
+                EmailDB.body.ilike(f"%{term}%")
+                for term in variants
+            ]))
 
     emails = q.order_by(EmailDB.received_at.desc()).limit(filters["limit"]).all()
 
@@ -368,6 +402,8 @@ def _is_email_query(message: str, history=None) -> bool:
     # A short follow-up referencing emails that were just listed.
     if _history_shows_emails(history) and _EMAIL_FOLLOWUP.search(msg):
         return True
+    if _history_shows_emails(history) and _re.match(r"^(?:or|and|what about)\s+\S", msg.strip()):
+        return True
     return False
 
 def _extract_email_search_terms(message: str) -> dict:
@@ -401,6 +437,10 @@ def _extract_email_search_terms(message: str) -> dict:
     if about_match:
         result["subject_keywords"] = about_match.group(1).strip().split()
 
+    continuation = _re.match(r"^(?:or|and|what about)\s+(.+?)[?!.,]*$", msg.strip())
+    if continuation and not result["sender"] and not result["subject_keywords"]:
+        result["subject_keywords"] = continuation.group(1).strip().split()
+
     # quantity hints
     num_match = _re.search(r'\b(\d+)\s+email', msg)
     if num_match:
@@ -428,12 +468,20 @@ def _build_email_context(db: Session, message: str) -> str:
         # Match the term against the sender OR the subject (covers "from leetcode"
         # as well as "the puzzle one").
         like = f"%{filters['sender']}%"
-        q = q.filter(EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like))
+        q = q.filter(
+            EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like) |
+            EmailDB.snippet.ilike(like) | EmailDB.body.ilike(like)
+        )
     if filters["subject_keywords"]:
         for kw in filters["subject_keywords"][:2]:
-            q = q.filter(
-                EmailDB.subject.ilike(f"%{kw}%") | EmailDB.snippet.ilike(f"%{kw}%")
-            )
+            variants = _email_term_variants(kw)
+            q = q.filter(or_(*[
+                EmailDB.sender.ilike(f"%{term}%") |
+                EmailDB.subject.ilike(f"%{term}%") |
+                EmailDB.snippet.ilike(f"%{term}%") |
+                EmailDB.body.ilike(f"%{term}%")
+                for term in variants
+            ]))
 
     emails = q.order_by(EmailDB.received_at.desc()).limit(filters["limit"]).all()
 
