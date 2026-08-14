@@ -347,13 +347,3 @@ Built with:
 - [VanillaJS](https://vanilla-js.com/) - Plain JavaScript for frontend
 
 ---
-
-*Documentation generated automatically. For the most current information, see the source code and CLAUDE.md.*
-
-### Achievement Workflow
-
-Repository maintenance workflow test.
-
-### Contribution Notes
-
-Additional documentation maintenance.
