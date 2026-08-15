@@ -243,6 +243,18 @@ class ChatManager {
                     sel.appendChild(opt);
                 });
             }
+            // Set the selected value to the saved default model from localStorage
+            const savedModel = localStorage.getItem('defaultModel');
+            if (savedModel) {
+                sel.value = savedModel;
+            }
+            // Log when user changes model selection
+            if (!sel.dataset.modelListenerAdded) {
+                sel.addEventListener('change', () => {
+                    console.log('Model switched to:', sel.value);
+                });
+                sel.dataset.modelListenerAdded = 'true';
+            }
         } catch (err) {
             console.error('Failed to load models:', err);
         }
