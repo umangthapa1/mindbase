@@ -18,32 +18,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         chatManager.sendMessage();
     });
 
-    $('#messageInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            chatManager.sendMessage();
-        }
-    });
-
-    // FIX 10: Auto-resize textarea as user types
-    $('#messageInput').addEventListener('input', function () {
-        this.style.height = 'auto';
-        this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-
-        // FIX 11: Show character counter when approaching limit
-        const count = this.value.length;
-        const counter = $('#charCounter');
-        if (counter) {
-            if (count > 8000) {
-                counter.textContent = `${count.toLocaleString()} / 10,000`;
-                counter.style.color = count > 9500 ? 'var(--danger)' : 'var(--text-tertiary)';
-                counter.style.display = 'block';
-            } else {
-                counter.style.display = 'none';
-            }
-        }
-    });
-
     /* ── Model selector ── */
     $('#modelSelector').addEventListener('change', (e) => {
         if (e.target.value) {

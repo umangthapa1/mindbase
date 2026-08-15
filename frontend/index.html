@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="js/theme.js?v=20260802"></script>
   <script src="js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="css/globals.css?v=20260807">
+  <link rel="stylesheet" href="css/globals.css?v=20260815">
 </head>
 <body>
 
@@ -276,13 +276,16 @@
     <!-- Composer -->
     <div class="composer-wrap">
       <div class="composer">
-        <input
-          type="text"
-          id="messageInput"
-          placeholder="Message Mindbase…"
-          autocomplete="off"
-          aria-label="Message input"
-        />
+        <div class="composer-field">
+          <textarea
+            id="messageInput"
+            rows="1"
+            placeholder="Message Mindbase…"
+            autocomplete="off"
+            aria-label="Message input"
+          ></textarea>
+          <span class="char-counter" id="charCounter" hidden aria-hidden="true"></span>
+        </div>
         <button class="send-btn" id="sendBtn" aria-label="Send message">
           <svg class="arrow" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="7.5" y1="13" x2="7.5" y2="2"/>
@@ -310,8 +313,8 @@
 <script src="js/toast.js"></script>
 <script src="js/utils.js?v=20260728c"></script>
 <script src="js/api.js"></script>
-<script src="js/chat.js?v=20260807"></script>
-<script src="js/app.js?v=20260728"></script>
+<script src="js/chat.js?v=20260815"></script>
+<script src="js/app.js?v=20260815"></script>
 
 </body>
 </html>

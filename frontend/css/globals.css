@@ -1528,7 +1528,7 @@ textarea:focus {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   padding: 6px 6px 6px 16px;
   transition:
@@ -1576,18 +1576,24 @@ textarea:focus {
   100% { background-position: 0% 50%; }
 }
 
-/* Improve input focus state */
-.composer input:focus {
+.composer-field {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+/* Improve textarea focus state */
+.composer textarea:focus {
   outline: none;
 }
 
 /* Enhanced placeholder styling */
-.computer input::placeholder {
+.composer textarea::placeholder {
   color: var(--text-tertiary);
   transition: opacity 200ms ease;
 }
 
-.composer input:focus::placeholder {
+.composer textarea:focus::placeholder {
   opacity: 0.7;
 }
 
@@ -1671,8 +1677,23 @@ textarea:focus {
   height: 60px;
 }
 
+.send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.send-btn .spinner { display: none; }
+
+.send-btn.loading .arrow   { display: none; }
+.send-btn.loading .spinner { display: block; animation: spin 0.8s linear infinite; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Message input specific enhancements */
-.composer input {
+.composer textarea {
   font-size: 14px;
   line-height: 1.5;
   padding: 8px 0;
@@ -1687,77 +1708,71 @@ textarea:focus {
   caret-color: var(--text-primary);
   resize: none;
   width: 100%;
+  max-height: 120px;
+  overflow-y: auto;
   transition:
     color 150ms ease,
-    padding 150ms ease;
+    padding 150ms ease,
+    height 150ms ease;
 }
 
 /* Remove any unwanted outline or box on focus */
-.composer input:focus {
+.composer textarea:focus {
   outline: none !important;
   box-shadow: none !important;
   border: none !important;
 }
 
 /* Enhanced placeholder behavior */
-.computer input::-webkit-input-placeholder {
+.composer textarea::-webkit-input-placeholder {
   color: var(--text-tertiary);
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
-.composer input::-moz-placeholder {
+.composer textarea::-moz-placeholder {
   color: var(--text-tertiary);
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
-.composer input:-ms-input-placeholder {
+.composer textarea:-ms-input-placeholder {
   color: var(--text-tertiary);
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
-.composer input::-ms-input-placeholder {
+.composer textarea::-ms-input-placeholder {
   color: var(--text-tertiary);
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
-.composer input::placeholder {
+.composer textarea::placeholder {
   color: var(--text-tertiary);
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
 /* Slightly lift placeholder on focus for better UX */
-.composer input:focus::-webkit-input-placeholder {
+.composer textarea:focus::-webkit-input-placeholder {
   opacity: 0.7;
   transform: translateY(-2px);
 }
 
-.composer input:focus::-moz-placeholder {
+.composer textarea:focus::-moz-placeholder {
   opacity: 0.7;
   transform: translateY(-2px);
 }
 
-.composer input:focus:-ms-input-placeholder {
+.composer textarea:focus:-ms-input-placeholder {
   opacity: 0.7;
   transform: translateY(-2px);
 }
 
-.composer input:focus::-ms-input-placeholder {
+.composer textarea:focus::-ms-input-placeholder {
   opacity: 0.7;
   transform: translateY(-2px);
 }
 
-.composer input:focus::placeholder {
+.composer textarea:focus::placeholder {
   opacity: 0.7;
   transform: translateY(-2px);
-}
-
-/* Prevent unwanted browser auto-fill backgrounds */
-.composer input:-webkit-autofill,
-.composer input:-webkit-autofill:hover,
-.composer input:-webkit-autofill:focus,
-.composer input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px transparent inset !important;
-  -webkit-text-fill-color: var(--text-primary) !important;
 }
 
 /* Add subtle inner glow on focus for clarity without being intrusive */
@@ -1810,103 +1825,38 @@ textarea:focus {
   opacity: 0.7;
 }
 
-/* Input height animation for smooth resizing */
-.composer input {
-  transition: height 150ms ease;
-}
-
 /* Prevent jump when placeholder disappears on focus */
-.composer input:not(:focus):placeholder-shown {
+.composer textarea:not(:focus):placeholder-shown {
   padding-top: 8px;
   padding-bottom: 8px;
 }
 
-.composer input:focus:not(:placeholder-shown) {
+.composer textarea:focus:not(:placeholder-shown) {
   padding-top: 8px;
   padding-bottom: 8px;
 }
 
-/* Character counter for message input (if implemented) */
 .char-counter {
   position: absolute;
-  bottom: 8px;
-  right: 16px;
+  bottom: 2px;
+  right: 0;
   font-size: 11px;
   color: var(--text-tertiary);
-  opacity: 0.7;
-  transition: opacity 150ms ease;
   pointer-events: none;
 }
 
-/* Show character counter when typing or focused */
-.composer:focus-within .char-counter,
-.composer input:not(:placeholder-shown) ~ .char-counter {
-  opacity: 1;
+.char-counter:not([hidden]) {
+  opacity: 0.85;
 }
 
-/* Warning when approaching limit */
 .char-counter.limit-warning {
   color: var(--warning);
-  animation: pulse 1.5s infinite;
+  animation: charCounterPulse 1.5s infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 0.0%, 100% { opacity: 0.7; }
+@keyframes charCounterPulse {
+  0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
-}
-  color: var(--text-tertiary);
-}
-
-.send-btn {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-mid);
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-secondary);
-  transition:
-    background 180ms ease,
-    border-color 180ms ease,
-    color 180ms ease,
-    transform 150ms ease;
-}
-
-.send-btn:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
-  color: var(--text-primary);
-  box-shadow: 0 0 0 1px rgba(248, 250, 255, 0.2);
-}
-
-.send-btn:active {
-  transform: scale(0.93);
-  transition-duration: 60ms;
-}
-
-.send-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.send-btn svg {
-  width: 15px;
-  height: 15px;
-}
-
-/* Send button states */
-.send-btn .spinner { display: none; }
-
-.send-btn.loading .arrow   { display: none; }
-.send-btn.loading .spinner { display: block; animation: spin 0.8s linear infinite; }
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 /* ──────────────────────────────────────────
