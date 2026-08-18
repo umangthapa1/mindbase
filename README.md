@@ -344,6 +344,4 @@ Built with:
 - [Ollama](https://ollama.com/) - Local LLM runner
 - [ChromaDB](https://www.trychroma.com/) - AI-native vector database
 - [SQLAlchemy](https://www.sqlalchemy.org/) - Python SQL toolkit
-- [VanillaJS](https://vanilla-js.com/) - Plain JavaScript for frontend
-
----
+- [VanillaJS](https://vanilla-js.com/) - Plain JavaScript for frontend.
