@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="../js/theme.js?v=20260802"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260807">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     html,body { overflow:hidden; height:100%; }
@@ -128,6 +128,7 @@
 
   async function openNote(id) {
     try {
+      await forceSavePending();
       const note = await fetch(`${API_BASE}/notes/${id}`).then(r => r.json());
       currentNote = note;
       document.getElementById('emptyState').style.display = 'none';
@@ -144,6 +145,7 @@
 
   document.getElementById('newNoteBtn').addEventListener('click', async () => {
     try {
+      await forceSavePending();
       const note = await fetch(`${API_BASE}/notes`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title:'Untitled'})}).then(r=>r.json());
       currentNote = note;
       await loadNotes();
@@ -156,20 +158,56 @@
     if (el) el.textContent = text;
   }
 
+  async function forceSavePending() {
+    if (autoSaveTimeout && currentNote) {
+      const noteToSave = currentNote;
+      clearTimeout(autoSaveTimeout);
+      autoSaveTimeout = null;
+      setSaveStatus('Saving…');
+      try {
+        const title = document.getElementById('noteTitle').value;
+        const content = document.getElementById('noteContent').value;
+        await fetch(`${API_BASE}/notes/${noteToSave.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content })
+        });
+        noteToSave.title = title;
+        loadNotes();
+        setSaveStatus('Saved');
+      } catch (e) {
+        console.error(e);
+        setSaveStatus('');
+        toast('Could not save note.', 'error');
+      }
+    }
+  }
+
   function autoSave() {
     if (!currentNote) return;
     clearTimeout(autoSaveTimeout);
     setSaveStatus('Saving…');
+    const noteToSave = currentNote;
     autoSaveTimeout = setTimeout(async () => {
       try {
-        await fetch(`${API_BASE}/notes/${currentNote.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title:document.getElementById('noteTitle').value, content:document.getElementById('noteContent').value})});
-        currentNote.title = document.getElementById('noteTitle').value;
+        const title = document.getElementById('noteTitle').value;
+        const content = document.getElementById('noteContent').value;
+        await fetch(`${API_BASE}/notes/${noteToSave.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title, content})});
+        noteToSave.title = title;
         loadNotes();
-        setSaveStatus('Saved');
+        if (currentNote && currentNote.id === noteToSave.id) {
+          setSaveStatus('Saved');
+        }
       } catch(e) {
         console.error(e);
-        setSaveStatus('');
+        if (currentNote && currentNote.id === noteToSave.id) {
+          setSaveStatus('');
+        }
         toast('Could not save note.', 'error');
+      } finally {
+        if (autoSaveTimeout && currentNote === noteToSave) {
+          autoSaveTimeout = null;
+        }
       }
     }, 1200);
   }
@@ -217,6 +255,8 @@
 
   document.getElementById('deleteNoteBtn').addEventListener('click', async () => {
     if (!currentNote || !await confirmDialog('Delete this note?')) return;
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = null;
     await fetch(`${API_BASE}/notes/${currentNote.id}`, {method:'DELETE'});
     currentNote = null;
     document.getElementById('emptyState').style.display='flex';
