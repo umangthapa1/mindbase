@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Settings — Mindbase</title>
-<script src="../js/theme.js?v=20260821"></script>
+<script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260802">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260822">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .setting-row { display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--border-subtle); gap:12px; }
@@ -150,6 +150,18 @@
           <option value="hellish-red">Hellish Red</option>
         </select>
       </div>
+      <div class="setting-row" style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:14px">
+        <div>
+          <div class="setting-label">Background Pattern</div>
+          <div class="setting-desc">Add a subtle background texture to the workspace.</div>
+        </div>
+        <select id="patternSelect" style="width:auto;min-width:160px">
+          <option value="none">None (Clean)</option>
+          <option value="grid">Subtle Grid</option>
+          <option value="dots">Dot Matrix</option>
+          <option value="cross">Mini Crosses</option>
+        </select>
+      </div>
     </div>
 
     <!-- Accent Color -->
@@ -212,6 +224,7 @@
 <script>
   const API_BASE = '/api';
   const themeSelect = document.getElementById('themeSelect');
+  const patternSelect = document.getElementById('patternSelect');
 
   function loadTheme() {
     const theme = window.MindbaseTheme?.getStoredTheme() || 'dark';
@@ -225,6 +238,21 @@
       window.MindbaseTheme.setStoredTheme(theme);
     } else {
       localStorage.setItem('theme', theme);
+    }
+  }
+
+  function loadPattern() {
+    const pattern = window.MindbaseTheme?.getStoredPattern() || 'none';
+    if (patternSelect) patternSelect.value = pattern;
+    return pattern;
+  }
+
+  function savePattern() {
+    const pattern = patternSelect ? patternSelect.value : 'none';
+    if (window.MindbaseTheme) {
+      window.MindbaseTheme.setStoredPattern(pattern);
+    } else {
+      localStorage.setItem('pattern', pattern);
     }
   }
 
@@ -247,6 +275,7 @@
 
   function loadPrefs() {
     loadTheme();
+    loadPattern();
     document.getElementById('temperature').value = localStorage.getItem('temperature') || '0.7';
     document.getElementById('tempVal').textContent = localStorage.getItem('temperature') || '0.7';
     document.getElementById('maxTokens').value = localStorage.getItem('maxTokens') || '2048';
@@ -261,6 +290,7 @@
     localStorage.setItem('autoMemory', document.getElementById('autoMemory').checked);
     localStorage.setItem('includeMemory', document.getElementById('includeMemory').checked);
     localStorage.setItem('theme', themeSelect.value);
+    if (patternSelect) localStorage.setItem('pattern', patternSelect.value);
   }
 
   document.getElementById('temperature').addEventListener('input', e => {
@@ -272,6 +302,7 @@
     document.getElementById(id).addEventListener('change', savePrefs));
 
   themeSelect.addEventListener('change', saveTheme);
+  if (patternSelect) patternSelect.addEventListener('change', savePattern);
 
   document.getElementById('exportBtn').addEventListener('click', async () => {
     const data = {

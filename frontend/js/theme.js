@@ -2,6 +2,10 @@ const THEME_STORAGE_KEY = 'theme';
 const DEFAULT_THEME = 'dark';
 const SUPPORTED_THEMES = new Set(['system', 'dark', 'light', 'black-gold', 'blue-night', 'grey-ash', 'hellish-red']);
 
+const PATTERN_STORAGE_KEY = 'pattern';
+const DEFAULT_PATTERN = 'none';
+const SUPPORTED_PATTERNS = new Set(['none', 'grid', 'dots', 'cross']);
+
 function normalizeTheme(theme) {
     return SUPPORTED_THEMES.has(theme) ? theme : DEFAULT_THEME;
 }
@@ -43,14 +47,45 @@ function setStoredTheme(theme) {
     return normalized;
 }
 
+function normalizePattern(pattern) {
+    return SUPPORTED_PATTERNS.has(pattern) ? pattern : DEFAULT_PATTERN;
+}
+
+function applyPattern(pattern) {
+    const normalized = normalizePattern(pattern);
+    document.documentElement.dataset.pattern = normalized;
+    return normalized;
+}
+
+function getStoredPattern() {
+    try {
+        return normalizePattern(localStorage.getItem(PATTERN_STORAGE_KEY));
+    } catch {
+        return DEFAULT_PATTERN;
+    }
+}
+
+function setStoredPattern(pattern) {
+    const normalized = normalizePattern(pattern);
+    try {
+        localStorage.setItem(PATTERN_STORAGE_KEY, normalized);
+    } catch {}
+    applyPattern(normalized);
+    return normalized;
+}
+
 function bootstrapTheme() {
     applyTheme(getStoredTheme());
+    applyPattern(getStoredPattern());
 
     window.addEventListener('storage', (event) => {
         if (event.key === THEME_STORAGE_KEY) {
             const normalized = normalizeTheme(event.newValue);
             applyTheme(normalized);
             emitThemeChange(normalized);
+        } else if (event.key === PATTERN_STORAGE_KEY) {
+            const normalized = normalizePattern(event.newValue);
+            applyPattern(normalized);
         }
     });
 
@@ -71,6 +106,9 @@ window.MindbaseTheme = {
     bootstrapTheme,
     getStoredTheme,
     setStoredTheme,
+    applyPattern,
+    getStoredPattern,
+    setStoredPattern,
 };
 
 bootstrapTheme();
