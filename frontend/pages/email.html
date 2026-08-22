@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Email — Mindbase</title>
-  <script src="../js/theme.js?v=20260802"></script>
+  <script src="../js/theme.js?v=20260821"></script>
   <script src="../js/accent.js?v=20260802"></script>
   <link rel="stylesheet" href="../../css/globals.css?v=20260802">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
@@ -656,7 +656,7 @@
     if (!host) return;
 
     const html = (email.html_body || '').trim();
-    const theme = window.MindbaseTheme?.getStoredTheme?.() || document.documentElement.dataset.theme || 'dark';
+    const theme = document.documentElement.dataset.theme || window.MindbaseTheme?.getStoredTheme?.() || 'dark';
     const themeStyles = {
       dark: {
         background: '#111111',

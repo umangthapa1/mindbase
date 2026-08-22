@@ -1,14 +1,19 @@
 const THEME_STORAGE_KEY = 'theme';
 const DEFAULT_THEME = 'dark';
-const SUPPORTED_THEMES = new Set(['dark', 'light', 'black-gold', 'blue-night', 'grey-ash', 'hellish-red']);
+const SUPPORTED_THEMES = new Set(['system', 'dark', 'light', 'black-gold', 'blue-night', 'grey-ash', 'hellish-red']);
 
 function normalizeTheme(theme) {
     return SUPPORTED_THEMES.has(theme) ? theme : DEFAULT_THEME;
 }
 
+function resolveSystemTheme() {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 function applyTheme(theme) {
     const normalized = normalizeTheme(theme);
-    document.documentElement.dataset.theme = normalized;
+    const resolved = normalized === 'system' ? resolveSystemTheme() : normalized;
+    document.documentElement.dataset.theme = resolved;
     return normalized;
 }
 
@@ -48,6 +53,17 @@ function bootstrapTheme() {
             emitThemeChange(normalized);
         }
     });
+
+    try {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (getStoredTheme() === 'system') {
+                applyTheme('system');
+                emitThemeChange('system');
+            }
+        });
+    } catch (e) {
+        console.error(e);
+    }
 }
 
 window.MindbaseTheme = {
