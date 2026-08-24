@@ -53,6 +53,8 @@ class API {
     }
 
     // Messages
+    // Per-browser preferences from the Settings page, sent with every chat turn.
+    // Anything unset or unparseable is omitted so the backend applies its default.
     static getChatOptions() {
         const opts = {};
         try {
@@ -65,6 +67,21 @@ class API {
             const t = parseFloat(temp);
             if (!Number.isNaN(t)) opts.temperature = t;
         }
+
+        const maxTokens = localStorage.getItem('maxTokens');
+        if (maxTokens !== null && maxTokens !== '') {
+            const n = parseInt(maxTokens, 10);
+            // The backend caps this at 32768; skip nonsense rather than 422 the turn.
+            if (Number.isInteger(n) && n > 0) opts.max_tokens = n;
+        }
+
+        // Checkboxes are stored as the strings "true"/"false".
+        const includeMemory = localStorage.getItem('includeMemory');
+        if (includeMemory !== null) opts.include_memory = includeMemory === 'true';
+
+        const autoMemory = localStorage.getItem('autoMemory');
+        if (autoMemory !== null) opts.auto_memory = autoMemory === 'true';
+
         return opts;
     }
 

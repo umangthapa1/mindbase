@@ -199,9 +199,7 @@
   --bg-raised: #f1f3f4;
   --bg-elevated: #e9ebed;
   --bg-hover: rgba(15, 23, 42, 0.03);
-  --bg-active: rgba(15, 23, 4, 0.06);
-
-  --border-subtle: rgba(15, 0.06);
+  --bg-active: rgba(15, 23, 42, 0.06);
 
   --border-subtle: rgba(15, 23, 42, 0.06);
   --border-mid: rgba(15, 23, 42, 0.10);
@@ -2407,19 +2405,10 @@ button {
 
 /* ──────────────────────────────────────────
    REDUCED MOTION
+   Moved to the very END of this file: the PREMIUM MOTION SYSTEM below declares
+   transitions with !important on class selectors, which outrank a universal
+   `*` rule no matter where it sits. Keep the reduced-motion block last.
 ────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-
-.dock-item:hover { transform: none; }
-}
 
 /* ──────────────────────────────────────────
    ACCENT ENHANCEMENTS (custom accent active)
@@ -2572,4 +2561,45 @@ button {
 
 .toast, .confirm-dialog, .context-menu {
   animation: springPop 320ms var(--ease-bounce) forwards;
+}
+
+/* ──────────────────────────────────────────
+   REDUCED MOTION  —  MUST STAY LAST IN THIS FILE
+   !important conflicts resolve by specificity FIRST, then source order, so a
+   universal `*` rule cannot override the class-selector `!important` transitions
+   declared above. Every selector the motion system animates is restated here at
+   matching-or-higher specificity.
+────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Transitions declared with !important on class selectors above. */
+  .dock-item,
+  .btn, button, select, input[type="checkbox"], input[type="radio"],
+  .card, .stat-card, .list-item, .drop-zone, .note-item, .conv-item {
+    transition-duration: 0.001ms !important;
+  }
+
+  /* Transform-based hover/press effects. */
+  .dock-item:hover, .dock-item:active,
+  .btn:active, button:active, .export-btn:active, .fmt-btn:active,
+  .card:hover, .stat-card:hover, .drop-zone:hover,
+  .note-item:hover, .conv-item:hover {
+    transform: none !important;
+  }
+
+  /* Entrance and perpetual animations. */
+  .main, .page-root, .notes-shell,
+  .message,
+  .message.assistant.streaming .msg-bubble,
+  .toast, .confirm-dialog, .context-menu {
+    animation: none !important;
+  }
 }

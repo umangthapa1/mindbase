@@ -7,7 +7,8 @@
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260823">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  <link rel="stylesheet" href="../../css/globals.css?v=20260824">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .step-card { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:10px; box-shadow:0 6px 18px -12px rgba(0,0,0,0.6); }
@@ -150,7 +151,16 @@
         buf = lines.pop();
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
-          try { handleUpdate(JSON.parse(line.slice(6))); } catch(e) {}
+          let payload;
+          // A malformed/partial SSE frame is expected and skippable...
+          try { payload = JSON.parse(line.slice(6)); } catch (e) { continue; }
+          // ...but a failure while rendering it is a real bug and must surface.
+          try {
+            handleUpdate(payload);
+          } catch (e) {
+            console.error('Research update failed:', e);
+            toast('Could not render the research update.', 'error');
+          }
         }
       }
     } catch(e) {
@@ -185,7 +195,9 @@
     if (data.type === 'report') {
       currentReport = data;
       document.getElementById('reportTitle').textContent = data.title;
-      document.getElementById('reportContent').innerHTML = DOMPurify ? DOMPurify.sanitize(marked.parse(data.content)) : marked.parse(data.content);
+      document.getElementById('reportContent').innerHTML = typeof DOMPurify !== 'undefined'
+        ? DOMPurify.sanitize(marked.parse(data.content))
+        : marked.parse(data.content);
       document.getElementById('reportSection').style.display = 'block';
       document.getElementById('currentStep').textContent = 'Research complete.';
       document.getElementById('progressFill').style.width = '100%';

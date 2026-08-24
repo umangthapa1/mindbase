@@ -49,6 +49,12 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     agent_prompt: Optional[str] = None
     temperature: Optional[float] = None
+    # Preferences the Settings page stores per-browser and sends with each turn.
+    # The defaults reproduce the previous hard-coded behaviour, so a client that
+    # omits them (or an older cached page) keeps working unchanged.
+    max_tokens: Optional[int] = Field(default=None, ge=1, le=32768)
+    include_memory: bool = True
+    auto_memory: bool = True
 
 class ChatResponse(BaseModel):
     id: str
@@ -187,3 +193,13 @@ class AutomationRuleUpdate(BaseModel):
     actions: Optional[List[str]] = None
     details: Optional[str] = None
     enabled: Optional[bool] = None
+
+
+class ResetRequest(BaseModel):
+    """Guard for the irreversible workspace wipe.
+
+    `confirm` must match `main.RESET_CONFIRM_TOKEN` exactly, so a stray or
+    replayed POST to /api/reset cannot destroy the workspace by accident.
+    """
+
+    confirm: str

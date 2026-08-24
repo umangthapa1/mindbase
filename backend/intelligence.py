@@ -101,6 +101,15 @@ class PreparedChat:
     actions_taken: List[Dict[str, Any]] = field(default_factory=list)
 
 
+async def _no_context() -> Tuple[str, List[str]]:
+    """Stand-in for a context gatherer the user has switched off.
+
+    Returned as an awaitable so it can sit inside the same `asyncio.gather` as the
+    real gatherers without special-casing the unpacking.
+    """
+    return "", []
+
+
 class ChatIntelligence:
     def detect_intent(self, message: str) -> str:
         scores: Dict[str, float] = {}
@@ -138,12 +147,20 @@ class ChatIntelligence:
             f"{snippet}\n\nTitle:"
         )
         try:
-            raw = await ollama_client.generate(
-                model,
-                [{"role": "user", "content": prompt}],
-                temperature=0.3,
+            # Same 60s ceiling as research.py::_safe_generate. This runs in a
+            # fire-and-forget background task, so without it a hung Ollama would
+            # keep the task (and its DB-bound continuation) alive indefinitely.
+            raw = await asyncio.wait_for(
+                ollama_client.generate(
+                    model,
+                    [{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                ),
+                timeout=60.0,
             )
             return raw.strip().strip('"\'').split("\n")[0][:80]
+        except asyncio.TimeoutError:
+            logger.warning("Auto-title generation timed out after 60s")
         except Exception as e:
             logger.warning("Auto-title generation failed: %s", e)
         return None
@@ -166,13 +183,17 @@ class ChatIntelligence:
         except Exception as e:
             logger.warning("Background title update failed: %s", e)
 
-    async def _background_title(
+    async def background_title(
         self,
         conv_id: str,
         history: List[Dict[str, str]],
         model: str,
     ) -> None:
-        """Background title generation + update (does not block the chat stream)."""
+        """Background title generation + update (does not block the chat stream).
+
+        Opens its own DB session via `_update_title`, so it is safe to schedule as a
+        fire-and-forget task that outlives the request that spawned it.
+        """
         title = await self._generate_title_text(history, model)
         if title:
             await self._update_title(conv_id, title)
@@ -384,7 +405,7 @@ class ChatIntelligence:
         agent_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         actions_taken: Optional[List[Dict[str, Any]]] = None,
-        conv=None,  # ConversationDB instance, optional — used for auto-titling
+        include_memory: bool = True,
     ) -> PreparedChat:
         intent = self.detect_intent(user_message)
         sources: List[str] = []
@@ -396,9 +417,12 @@ class ChatIntelligence:
         # I/O-bound (SQLite/Chroma/Ollama embeddings) so concurrency here directly
         # reduces first-token latency. `_gather_schedule` runs its SQLAlchemy work in
         # a worker thread so it doesn't block the event loop.
+        # `include_memory` is the Settings toggle: when off, skip the memory lookup
+        # entirely rather than gathering it and discarding the result — that also
+        # avoids the embedding round-trip.
         (schedule_ctx, sched_src), (mem_ctx, mem_src), (doc_ctx, doc_src) = await asyncio.gather(
             self._gather_schedule(db, user_message, intent),
-            self._gather_memories(user_message, intent),
+            self._gather_memories(user_message, intent) if include_memory else _no_context(),
             self._gather_documents(user_message, intent),
         )
         if schedule_ctx:

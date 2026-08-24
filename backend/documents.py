@@ -251,6 +251,36 @@ Summary:"""
             logger.warning("Error deleting document: %s", e)
             return False
 
+    def clear_all(self) -> int:
+        """Delete every document (vectors + original files) and return how many.
+
+        Same reasoning as `MemoryManager.clear_all`: Chroma has no truncate and a
+        bulk id-delete leaves the HNSW index tombstoned, so drop the collection and
+        recreate it with the same settings. Synchronous — call via `asyncio.to_thread`.
+        """
+        try:
+            ids = self.collection.get(limit=100_000).get("metadatas") or []
+            removed = len({m.get("document_id") for m in ids if m.get("document_id")})
+        except Exception as e:
+            logger.warning("Could not count documents before clearing: %s", e)
+            removed = 0
+
+        self.client.delete_collection(name="documents")
+        self.collection = self.client.get_or_create_collection(
+            name="documents",
+            metadata={"hnsw:space": "cosine"}
+        )
+
+        for file in self.uploads_dir.iterdir():
+            if file.is_file():
+                try:
+                    file.unlink()
+                except OSError as e:
+                    logger.warning("Could not delete upload %s: %s", file.name, e)
+
+        self._invalidate_list_cache()
+        return removed
+
     async def list_documents(self) -> List[Dict]:
         if (
             self._list_cache is not None

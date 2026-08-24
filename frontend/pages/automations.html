@@ -6,7 +6,7 @@
   <title>Automations — Mindbase</title>
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260823">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260824">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .automation-intro { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:28px; }
@@ -50,7 +50,7 @@
   <main class="page-content narrow">
     <div class="automation-intro">
       <div><h1>Automated requests</h1><p>Create simple rules that turn incoming information into useful work. Choose a trigger, describe what to look for, then select what Mindbase should do.</p></div>
-      <div class="automation-note">Rules are saved on this device. Execution is ready to connect to the email and task services next.</div>
+      <div class="automation-note">Rules are stored in your workspace database and run automatically on every email sync.</div>
     </div>
 
     <section class="card" style="margin-bottom:30px">
@@ -71,7 +71,7 @@
               <label class="action-option"><input type="checkbox" name="action" value="save" checked> Save attachments</label>
               <label class="action-option"><input type="checkbox" name="action" value="task" checked> Create a task</label>
               <label class="action-option"><input type="checkbox" name="action" value="tag" checked> Add a tag</label>
-              <label class="action-option"><input type="checkbox" name="action" value="notify"> Send a notification</label>
+              <label class="action-option"><input type="checkbox" name="action" value="notify"> Log it in the Done list</label>
             </div>
             <label class="field-label" for="ruleDetails" style="margin-top:12px">Details (optional)</label>
             <input id="ruleDetails" type="text" placeholder="e.g. Tag as finance; task due in 3 days">
@@ -89,7 +89,7 @@
 </div>
 <script src="../js/toast.js"></script>
 <script>
-  const actionLabels = { save: 'save attachment', task: 'create task', tag: 'add tag', notify: 'send notification' };
+  const actionLabels = { save: 'save attachment', task: 'create task', tag: 'add tag', notify: 'log it in Done' };
   const triggerLabels = { email: 'an email arrives', document: 'a document is added', task: 'a task is completed' };
   const $ = (id) => document.getElementById(id);
   let rules = [];
@@ -102,16 +102,18 @@
     list.innerHTML = rules.map(rule => {
       const actions = rule.actions.map(a => actionLabels[a]).join(', ') || 'do nothing';
       const detail = rule.details ? ` ${esc(rule.details)}.` : '';
-      return `<article class="rule-card"><div class="rule-top"><span class="rule-icon">${lightning}</span><div class="rule-name">${esc(rule.name)}</div><span class="rule-spacer"></span><span class="status ${rule.enabled ? 'on' : ''}">${rule.enabled ? 'Active' : 'Paused'}</span></div><div class="rule-summary">When ${triggerLabels[rule.trigger]}${rule.condition ? ` and ${esc(rule.condition)}` : ''}, ${actions}.${detail}</div><div class="rule-footer"><button class="mini-btn" data-toggle="${rule.id}">${rule.enabled ? 'Pause' : 'Enable'}</button><button class="mini-btn" data-test="${rule.id}">Run test</button><button class="mini-btn" data-delete="${rule.id}">Delete</button></div></article>`;
+      return `<article class="rule-card"><div class="rule-top"><span class="rule-icon">${lightning}</span><div class="rule-name">${esc(rule.name)}</div><span class="rule-spacer"></span><span class="status ${rule.enabled ? 'on' : ''}">${rule.enabled ? 'Active' : 'Paused'}</span></div><div class="rule-summary">When ${triggerLabels[rule.trigger]}${rule.condition ? ` and ${esc(rule.condition)}` : ''}, ${actions}.${detail}</div><div class="rule-footer"><button class="mini-btn" data-toggle="${rule.id}">${rule.enabled ? 'Pause' : 'Enable'}</button><button class="mini-btn" data-test="${rule.id}">How it runs</button><button class="mini-btn" data-delete="${rule.id}">Delete</button></div></article>`;
     }).join('');
     list.querySelectorAll('[data-toggle]').forEach(btn => btn.onclick = async () => {
       const rule = rules.find(r => r.id === btn.dataset.toggle);
       try { const response = await fetch(`/api/automations/${rule.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ enabled: !rule.enabled }) }); if (!response.ok) throw new Error(); rule.enabled = !rule.enabled; renderRules(); toast(rule.enabled ? 'Automation enabled' : 'Automation paused', 'ok'); } catch (_) { toast('Could not update automation.', 'error'); }
     });
     list.querySelectorAll('[data-delete]').forEach(btn => btn.onclick = async () => {
+      const rule = rules.find(r => r.id === btn.dataset.delete);
+      if (!await confirmDialog(`Delete "${rule?.name || 'this automation'}"? Its completed runs stay in the Done list, but the rule is gone for good.`, { confirmText: 'Delete rule', danger: true })) return;
       try { const response = await fetch(`/api/automations/${btn.dataset.delete}`, { method:'DELETE' }); if (!response.ok) throw new Error(); rules = rules.filter(r => r.id !== btn.dataset.delete); renderRules(); toast('Automation removed', 'info'); } catch (_) { toast('Could not remove automation.', 'error'); }
     });
-    list.querySelectorAll('[data-test]').forEach(btn => btn.onclick = () => toast('Rules run automatically when new email is synced.', 'info'));
+    list.querySelectorAll('[data-test]').forEach(btn => btn.onclick = () => toast('Rules run automatically on every email sync — there is no manual trigger yet. Sync your inbox to see this rule fire.', 'info', 6000));
   }
 
   async function loadCompleted() {

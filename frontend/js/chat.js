@@ -1,5 +1,15 @@
 const MAX_MESSAGE_LENGTH = 10000;
 
+// Mirrors PLACEHOLDER_TITLE_RE in backend/intelligence.py. A title matching this
+// is one nobody has meaningfully named yet, so the backend is still free to
+// replace it with an LLM-generated one.
+const PLACEHOLDER_TITLE_RE = /^(new conv|new chat|untitled|conversation|chat|\d{4}[-/ ])/i;
+
+// How long to wait before each attempt at picking up the generated title. The
+// backend produces it in a background task after the stream ends, so there is no
+// event to listen for — back off instead of hammering the endpoint.
+const TITLE_POLL_DELAYS_MS = [1200, 2500, 4000, 6000];
+
 class ChatManager {
     constructor() {
         this.currentConversationId = null;
@@ -594,18 +604,17 @@ class ChatManager {
         this.appendMessage('user', message);
         this.scrollBottom();
 
-        // If conversation title is still default, set it based on user message
+        // Show a provisional title straight away so the sidebar isn't stuck on
+        // "New Conversation" while the model works. Deliberately NOT persisted:
+        // the backend only auto-generates a title while the stored one still looks
+        // like a placeholder, so writing this truncated version to the DB would
+        // permanently suppress the real LLM title.
         const userMessageConv = this.conversations.find(c => c.id === this.currentConversationId);
-        if (userMessageConv && (userMessageConv.title === 'New Conversation' || userMessageConv.title === 'New conversation')) {
-            const title = message.length > 30 ? message.substring(0, 30) + '...' : message;
-            try {
-                await API.updateConversation(this.currentConversationId, title);
-                userMessageConv.title = title;
-                this.renderConversations();
-                $('#pageTitle').textContent = title;
-            } catch (e) {
-                console.error('Failed to update conversation title:', e);
-            }
+        const awaitingTitle = !!userMessageConv && PLACEHOLDER_TITLE_RE.test(userMessageConv.title || '');
+        if (awaitingTitle) {
+            userMessageConv.title = message.length > 30 ? message.substring(0, 30) + '...' : message;
+            this.renderConversations();
+            $('#pageTitle').textContent = userMessageConv.title;
         }
 
         // Declare streamBubble outside try block so it's accessible in catch
@@ -684,18 +693,44 @@ class ChatManager {
             input.focus();
         }
 
-        // FIX 8: Update conversation title locally instead of reloading all conversations
-        // Only update if the title is still the default (indicating we haven't updated it yet)
-        const convToUpdate = this.conversations.find(c => c.id === this.currentConversationId);
-        if (convToUpdate && (convToUpdate.title === 'New Conversation' || convToUpdate.title === 'New conversation')) {
+        // The backend generates the real title in a background task once the stream
+        // finishes, so poll briefly for it and swap out the provisional one.
+        if (awaitingTitle) {
+            await this.pollForGeneratedTitle(this.currentConversationId);
+        }
+    }
+
+    /**
+     * Wait for the backend's LLM-generated title and adopt it.
+     * Gives up quietly after TITLE_POLL_DELAYS_MS is exhausted — the provisional
+     * title stays, which is the same outcome as before auto-titling existed.
+     */
+    async pollForGeneratedTitle(conversationId) {
+        for (const delay of TITLE_POLL_DELAYS_MS) {
+            await new Promise(r => setTimeout(r, delay));
+
+            // The user may have switched or deleted the conversation while we waited.
+            if (this.currentConversationId !== conversationId) return;
+
+            let title;
             try {
-                const updated = await API.getConversation(this.currentConversationId);
-                convToUpdate.title = updated.title;
-                this.renderConversations();
-                $('#pageTitle').textContent = updated.title || 'Conversation';
+                // Metadata only — cheaper than /chat/conversations/{id}, which also
+                // returns every message in the conversation.
+                const list = await API.listConversations();
+                title = list.find(c => c.id === conversationId)?.title;
             } catch {
-                // Non-critical — title just won't update in sidebar
+                continue; // transient; try again on the next tick
             }
+
+            if (!title || PLACEHOLDER_TITLE_RE.test(title)) continue;
+
+            const conv = this.conversations.find(c => c.id === conversationId);
+            if (conv) conv.title = title;
+            this.renderConversations();
+            if (this.currentConversationId === conversationId) {
+                $('#pageTitle').textContent = title;
+            }
+            return;
         }
     }
 

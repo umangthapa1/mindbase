@@ -6,7 +6,7 @@
   <title>Settings — Mindbase</title>
 <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260823">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260824">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .setting-row { display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--border-subtle); gap:12px; }
@@ -128,7 +128,7 @@
         </div>
       </div>
       <div class="setting-row">
-        <div><div class="setting-label">Max tokens</div></div>
+        <div><div class="setting-label">Max tokens</div><div class="setting-desc">Longest reply the model may produce, in tokens</div></div>
         <input id="maxTokens" type="number" value="2048" min="100" max="10000" style="width:100px">
       </div>
     </div>
@@ -184,11 +184,11 @@
     <div class="card" style="margin-bottom:16px">
       <div class="card-title">Memory</div>
       <div class="setting-row">
-        <div class="setting-label">Auto-extract from chat</div>
+        <div><div class="setting-label">Auto-extract from chat</div><div class="setting-desc">Save memories when you say "remember…" or "keep in mind…"</div></div>
         <input id="autoMemory" type="checkbox" checked>
       </div>
       <div class="setting-row">
-        <div class="setting-label">Include in context</div>
+        <div><div class="setting-label">Include in context</div><div class="setting-desc">Let the model read your memories and notes when answering</div></div>
         <input id="includeMemory" type="checkbox" checked>
       </div>
       <div style="margin-top:12px">
@@ -201,7 +201,7 @@
       <div class="card-title">Data &amp; privacy</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-ghost btn-full" id="exportBtn" style="justify-content:flex-start">Export all data</button>
-        <button class="btn btn-ghost btn-full" id="backupBtn" style="justify-content:flex-start">Backup database</button>
+        <button class="btn btn-ghost btn-full" id="backupBtn" style="justify-content:flex-start">Where is my data?</button>
         <button class="btn btn-danger btn-full" id="deleteAllBtn" style="justify-content:flex-start">Delete all data</button>
       </div>
       <div style="margin-top:12px;font-size:11px;color:var(--text-tertiary);font-weight:300">All data is stored locally. Nothing leaves your device.</div>
@@ -305,25 +305,60 @@
   if (patternSelect) patternSelect.addEventListener('change', savePattern);
 
   document.getElementById('exportBtn').addEventListener('click', async () => {
-    const data = {
-      conversations: await fetch(`${API_BASE}/chat/conversations`).then(r=>r.json()),
-      notes: await fetch(`${API_BASE}/notes`).then(r=>r.json()),
-      tasks: await fetch(`${API_BASE}/tasks`).then(r=>r.json()),
-      memories: await fetch(`${API_BASE}/memory/list`).then(r=>r.json()),
-      exportedAt: new Date().toISOString()
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mindbase-export-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const btn = document.getElementById('exportBtn');
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    try {
+      const getJSON = async (path) => {
+        const res = await fetch(`${API_BASE}${path}`);
+        if (!res.ok) throw new Error(`${path} failed (${res.status})`);
+        return res.json();
+      };
+
+      // /chat/conversations returns metadata only (title, timestamps, message_count).
+      // The messages themselves live on /chat/conversations/{id}, so fetch each one —
+      // otherwise the "full backup" contains no chat content at all.
+      const index = await getJSON('/chat/conversations');
+      const conversations = [];
+      for (const c of index) {
+        btn.textContent = `Exporting… ${conversations.length + 1}/${index.length}`;
+        conversations.push(await getJSON(`/chat/conversations/${c.id}`));
+      }
+
+      const [notes, tasks, memories] = await Promise.all([
+        getJSON('/notes'),
+        getJSON('/tasks'),
+        getJSON('/memory/list'),
+      ]);
+
+      const data = {
+        conversations,
+        notes,
+        tasks,
+        memories,
+        exportedAt: new Date().toISOString()
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mindbase-export-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      const messageCount = conversations.reduce((n, c) => n + (c.messages?.length || 0), 0);
+      toast(`Exported ${conversations.length} conversations (${messageCount} messages).`, 'ok');
+    } catch (e) {
+      toast('Export failed: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   });
 
-  document.getElementById('backupBtn').addEventListener('click', () => toast('Database backup: the SQLite file is at data/workspace.db', 'info', 6000));
+  document.getElementById('backupBtn').addEventListener('click', () => toast('Your workspace database is the SQLite file at data/workspace.db — copy it to back it up. Use "Export all data" for a portable JSON snapshot.', 'info', 8000));
 
   document.getElementById('clearMemoriesBtn').addEventListener('click', async () => {
     if (!await confirmDialog('Clear all memories? This cannot be undone.', { confirmText: 'Clear all' })) return;
@@ -335,14 +370,38 @@
   });
 
   document.getElementById('deleteAllBtn').addEventListener('click', async () => {
-    if (!await confirmDialog('Delete ALL data? This is permanent.', { confirmText: 'Delete all' })) return;
-    if (!await confirmDialog('This deletes all conversations, notes, tasks, and memories from both the app and the backend. Continue?', { confirmText: 'Yes, delete everything' })) return;
+    const btn = document.getElementById('deleteAllBtn');
+    if (!await confirmDialog('Delete ALL data? This is permanent.', { confirmText: 'Delete all', danger: true })) return;
+    if (!await confirmDialog('This erases every conversation, note, task, event, email, automation, memory and document from the backend. Your saved email login is kept — disconnect it separately if you want that gone too. Continue?', { confirmText: 'Yes, delete everything', danger: true })) return;
+
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
     try {
-      // Also call a backend reset endpoint if available
-      await fetch(`${API_BASE}/reset`, {method:'POST'}).catch(()=>{});
-    } catch(e) {}
-    localStorage.clear();
-    window.location.href = '/';
+      // The backend requires this exact token, so a stray POST can't wipe the
+      // workspace. Errors are surfaced instead of swallowed: clearing localStorage
+      // after a failed reset would leave the UI looking empty while the data is
+      // still there.
+      const res = await fetch(`${API_BASE}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'DELETE EVERYTHING' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Reset failed (${res.status})`);
+      }
+      const { total } = await res.json();
+      toast(`Deleted ${total} items. Reloading…`, 'ok');
+      localStorage.clear();
+      setTimeout(() => { window.location.href = '/'; }, 900);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      // Deliberately not claiming "nothing was deleted" — a request that fails
+      // after the server started working may have removed some of it.
+      toast('Reset did not complete: ' + e.message + ' — reload to see what remains.', 'error', 8000);
+    }
   });
 
 /* ── Accent Color UI ── */

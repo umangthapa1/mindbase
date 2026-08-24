@@ -248,6 +248,26 @@ class MemoryManager:
             logger.error("Error deleting memory: %s", e)
             return False
 
+    def clear_all(self) -> int:
+        """Delete every memory and return how many were removed.
+
+        Chroma has no truncate, and deleting by id in bulk leaves the HNSW index
+        tombstoned, so drop the collection and recreate it with the same settings.
+        Synchronous (Chroma's client is) — call it via `asyncio.to_thread`.
+        """
+        try:
+            removed = self.collection.count()
+        except Exception as e:
+            logger.warning("Could not count memories before clearing: %s", e)
+            removed = 0
+
+        self.client.delete_collection(name="memories")
+        self.collection = self.client.get_or_create_collection(
+            name="memories",
+            metadata={"hnsw:space": "cosine"}
+        )
+        return removed
+
     async def get_all_memories(self, limit: int = 100) -> List[Dict]:
         results = self.collection.get(limit=limit)
 

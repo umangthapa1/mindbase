@@ -6,7 +6,7 @@
   <title>Agents — Mindbase</title>
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260823">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260824">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .agent-card {
@@ -163,10 +163,14 @@
     });
 
     list.querySelectorAll('[data-del-id]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const id = Number(btn.dataset.delId);
-        const updated = JSON.parse(localStorage.getItem('customAgents') || '[]').filter(a => a.id !== id);
-        localStorage.setItem('customAgents', JSON.stringify(updated));
+        const stored = JSON.parse(localStorage.getItem('customAgents') || '[]');
+        const agent = stored.find(a => a.id === id);
+        // Custom agents live only in this browser's localStorage — there is no
+        // server copy to restore from, so confirm before dropping one.
+        if (!await confirmDialog(`Delete "${agent?.name || 'this agent'}"? Its prompt isn't saved anywhere else and can't be recovered.`, { confirmText: 'Delete agent', danger: true })) return;
+        localStorage.setItem('customAgents', JSON.stringify(stored.filter(a => a.id !== id)));
         loadCustomAgents();
         toast('Agent removed', 'info');
       });

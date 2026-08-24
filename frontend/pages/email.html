@@ -6,7 +6,7 @@
   <title>Email — Mindbase</title>
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260823">
+  <link rel="stylesheet" href="../../css/globals.css?v=20260824">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .email-layout {
@@ -728,6 +728,13 @@
   }
 
   async function markAllRead() {
+    // The endpoint clears the unread flag on every synced email, not just the ones
+    // currently listed, so keep the wording unqualified.
+    if (!await confirmDialog(
+      "Mark every synced email as read? This can't be undone from Mindbase.",
+      { confirmText: 'Mark all read', danger: false }
+    )) return;
+
     const btn = document.getElementById('markAllReadBtn');
     if (btn) {
       btn.disabled = true;

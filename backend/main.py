@@ -16,7 +16,7 @@ from typing import Optional
 
 from config import API_HOST, API_PORT, DEFAULT_MODEL, BASE_DIR, CORS_ORIGINS, CORS_ALLOW_CREDENTIALS, EMAIL_AUTO_SYNC, EMAIL_AUTO_SYNC_INTERVAL_SECONDS, EMAIL_AUTO_SYNC_MAX_RESULTS
 from imap_service import email_service, serialize_email, ATTACHMENTS_DIR
-from database import init_db, get_db, ConversationDB, MessageDB, SessionLocal, NoteDB, TaskDB, CalendarEventDB, EmailDB, AutomationRuleDB, AutomationRunDB, EmailAttachmentDB
+from database import init_db, get_db, ConversationDB, MessageDB, SessionLocal, NoteDB, TaskDB, CalendarEventDB, EmailDB, AutomationRuleDB, AutomationRunDB, EmailAttachmentDB, AutomationArtifactDB
 from tasks_service import task_manager, serialize_task, serialize_event, _parse_date_string
 from models import (
     Conversation, ConversationCreate, ConversationUpdate, ChatRequest, ChatResponse, Message,
@@ -25,16 +25,35 @@ from models import (
     CalendarEventCreate, CalendarEventUpdate,
     ResearchRequest, ResearchSaveRequest, DocumentAsk,
     EmailConnect, EmailSync, AutomationRuleCreate, AutomationRuleUpdate,
+    ResetRequest,
 )
 from automations import EMAIL_ACTIONS, process_new_emails, serialize_rule, serialize_run
 from ollama import ollama_client, aclose as _ollama_aclose
 from memory import memory_manager
 from documents import document_manager
 from research import research_agent
-from intelligence import chat_intelligence
+from intelligence import chat_intelligence, PLACEHOLDER_TITLE_RE
 
 logger = logging.getLogger(__name__)
 _email_sync_lock = threading.Lock()
+
+# Fire-and-forget background work. asyncio holds only a weak reference to a task,
+# so the handle must be kept alive or the task can be garbage-collected mid-flight
+# and its exception never retrieved.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro, *, name: str | None = None) -> None:
+    """Schedule `coro` without blocking, keeping a strong reference until it finishes."""
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+
+    def _done(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if not t.cancelled() and t.exception() is not None:
+            logger.warning("Background task %s failed: %s", t.get_name(), t.exception())
+
+    task.add_done_callback(_done)
 
 
 def _sync_and_process_email(db: Session, max_results: int, unread_only: bool) -> tuple[list[EmailDB], list[dict]]:
@@ -654,7 +673,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             agent_prompt=request.agent_prompt,
             temperature=request.temperature,
             actions_taken=actions_taken,
-            conv=conv,
+            include_memory=request.include_memory,
         )
         messages = prepared.messages
         intent = prepared.intent
@@ -697,7 +716,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             yield f"data: {json.dumps({'chunk': response_text})}\n\n"
         else:
             async for chunk in ollama_client.stream_generate(
-                model, messages, temperature=gen_temperature
+                model, messages, temperature=gen_temperature, num_predict=request.max_tokens
             ):
                 response_text += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
@@ -712,15 +731,31 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         conv.updated_at = datetime.utcnow()
         db.commit()
 
-        # Auto-extract memory from conversation
+        # Ordered history, loaded once and shared by auto-titling and memory extraction.
         try:
-            recent_messages = [
+            ordered = [
                 {"role": m.role, "content": m.content}
-                for m in sorted(conv.messages, key=lambda x: x.created_at)[-6:]
+                for m in sorted(conv.messages, key=lambda x: x.created_at)
             ]
-            await memory_manager.auto_extract_memory_from_chat(request.conversation_id, recent_messages)
         except Exception as e:
-            logger.error("Memory extraction error: %s", e)
+            logger.error("Could not load conversation history: %s", e)
+            ordered = []
+
+        # Auto-title once there is a real exchange to summarize. Fire-and-forget so it
+        # never delays the `done` frame; background_title opens its own DB session.
+        if ordered and PLACEHOLDER_TITLE_RE.match(conv.title or ""):
+            _spawn_background(
+                chat_intelligence.background_title(request.conversation_id, ordered, model),
+                name=f"auto-title:{request.conversation_id}",
+            )
+
+        # Auto-extract memory from conversation, unless the user turned it off in
+        # Settings ("Auto-extract from chat").
+        if request.auto_memory:
+            try:
+                await memory_manager.auto_extract_memory_from_chat(request.conversation_id, ordered[-6:])
+            except Exception as e:
+                logger.error("Memory extraction error: %s", e)
 
         yield f"data: {json.dumps({'done': True, 'message_id': assistant_msg.id})}\n\n"
 
@@ -1111,7 +1146,7 @@ async def delete_document(document_id: str):
     return {"status": "deleted", "id": document_id}
 
 
-# ── Email endpoints (Gmail) ──────────────────────────────────────────────────
+# ── Email endpoints (IMAP) ───────────────────────────────────────────────────
 @app.get("/api/email/status")
 def email_status():
     return {"connected": email_service.is_connected(), "email": email_service.account_email()}
@@ -1132,7 +1167,7 @@ async def email_connect(data: EmailConnect):
             msg = "Sign-in failed. Make sure you used an app password, not your normal password."
         raise HTTPException(status_code=401, detail=msg)
     if EMAIL_AUTO_SYNC:
-        asyncio.create_task(asyncio.to_thread(_background_email_sync_once))
+        _spawn_background(asyncio.to_thread(_background_email_sync_once), name="email-first-sync")
     return {"connected": True, "email": email_service.account_email()}
 
 @app.post("/api/email/disconnect")
@@ -1272,6 +1307,92 @@ async def summarize_email(email_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail="The model returned an empty summary. Check that Ollama is running.")
 
     return {"summary": summary}
+
+
+# ── Workspace reset ──────────────────────────────────────────────────────────
+# The client must echo this string back for the wipe to run, so a stray, replayed,
+# or CSRF-style POST to /api/reset can't destroy the workspace on its own.
+RESET_CONFIRM_TOKEN = "DELETE EVERYTHING"
+
+# Children before parents: automation artifacts reference runs, attachments and
+# tasks; runs reference rules and emails; messages reference conversations.
+_RESET_ORDER = [
+    ("automation_artifacts", AutomationArtifactDB),
+    ("automation_runs", AutomationRunDB),
+    ("email_attachments", EmailAttachmentDB),
+    ("messages", MessageDB),
+    ("emails", EmailDB),
+    ("automation_rules", AutomationRuleDB),
+    ("tasks", TaskDB),
+    ("notes", NoteDB),
+    ("calendar_events", CalendarEventDB),
+    ("conversations", ConversationDB),
+]
+
+
+def _wipe_sql() -> dict[str, int]:
+    """Empty every content table. Sync SQLAlchemy — call via asyncio.to_thread.
+
+    Opens its own session rather than borrowing the request-scoped one, since that
+    session belongs to the event loop's thread.
+    """
+    deleted: dict[str, int] = {}
+    with SessionLocal() as db:
+        stored_names = [
+            row[0] for row in db.query(EmailAttachmentDB.stored_name).all() if row[0]
+        ]
+        for label, model in _RESET_ORDER:
+            deleted[label] = db.query(model).delete(synchronize_session=False)
+        db.commit()
+
+    # Attachment blobs live outside the DB, so the rows going away doesn't reclaim them.
+    # stored_name is a generated uuid, but bound it to the directory anyway — same
+    # guard the download route uses, and this loop unlinks.
+    attachments_root = ATTACHMENTS_DIR.resolve()
+    for name in stored_names:
+        path = (ATTACHMENTS_DIR / name).resolve()
+        if path.parent != attachments_root:
+            logger.warning("Skipping out-of-tree attachment path during reset: %s", name)
+            continue
+        with suppress(OSError):
+            path.unlink(missing_ok=True)
+
+    return deleted
+
+
+@app.post("/api/reset")
+async def reset_workspace(data: ResetRequest):
+    """Delete all workspace content: chats, notes, tasks, events, emails,
+    automations, memories and documents.
+
+    Deliberately does **not** touch the saved email credentials — resetting the
+    workspace shouldn't silently unlink the user's mailbox. Disconnecting is a
+    separate, explicit action (`POST /api/email/disconnect`).
+    """
+    if data.confirm != RESET_CONFIRM_TOKEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reset not confirmed. Send {{\"confirm\": \"{RESET_CONFIRM_TOKEN}\"}} to proceed.",
+        )
+
+    logger.warning("Workspace reset requested — deleting all content.")
+    deleted = await asyncio.to_thread(_wipe_sql)
+
+    try:
+        deleted["memories"] = await asyncio.to_thread(memory_manager.clear_all)
+    except Exception as e:
+        logger.error("Failed to clear memories during reset: %s", e)
+        deleted["memories"] = -1
+
+    try:
+        deleted["documents"] = await asyncio.to_thread(document_manager.clear_all)
+    except Exception as e:
+        logger.error("Failed to clear documents during reset: %s", e)
+        deleted["documents"] = -1
+
+    total = sum(v for v in deleted.values() if v > 0)
+    logger.warning("Workspace reset complete: %s items removed.", total)
+    return {"status": "reset", "deleted": deleted, "total": total}
 
 
 frontend_path = BASE_DIR / "frontend"

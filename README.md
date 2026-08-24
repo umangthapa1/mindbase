@@ -26,7 +26,7 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 
 ### Productivity Tools
 - **Email Integration**: Full IMAP support for Gmail and other email providers
-- **Email Automations**: Local rules that react to new mail by saving attachments, creating tasks, tagging messages, and recording notification events
+- **Email Automations**: Local rules that react to new mail by saving attachments, creating tasks, tagging messages, and logging matches to the Done list
 - **Automation History**: A Done view with completed runs, source emails, created tasks, and downloadable saved files
 - **Task Management**: Create, schedule, and track tasks with natural language
 - **Calendar Integration**: Calendar view with task/event synchronization
@@ -36,13 +36,14 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 ### Communication & Collaboration
 - **Real-time Chat**: Streaming responses with context awareness
 - **Model Switching**: Change AI models on-the-fly without restart
-- **Conversation History**: Persistent chat history with search
+- **Conversation History**: Persistent chat history with automatic LLM-generated conversation titles
 - **Conversation Export**: Export individual chat conversations as formatted `.txt` files (including correct message timestamps and roles) directly from the chat header.
-- **Multi-modal Support**: Handle text, documents, and email content
+- **Unified Context**: A single chat draws on your memories, notes, documents, tasks, calendar, and synced email
 - **Theme Changer**: Switch between light, dark, black-gold, blue-night, grey-ash, and Hellish Red themes via the dashboard.
 - **Accent Color Selector**: Personalize the highlight color across all themes with 10 curated presets or a custom color picker — changes apply instantly and persist automatically.
 - **Message Copying**: Right-click any chat message to copy its content to clipboard.
-- **Full Data Backup**: Export all application data (conversations, notes, tasks, and memories) as a single JSON backup file from the Settings page.
+- **Full Data Backup**: Export all application data (conversations with their messages, notes, tasks, and memories) as a single JSON backup file from the Settings page.
+- **Workspace Reset**: "Delete all data" in Settings wipes every conversation, note, task, event, email, automation, memory, and document from the backend. Saved email credentials are deliberately left alone — disconnect the mailbox separately if you want those gone too.
 
 ### Security & Privacy
 - **100% Local**: All data stays on your machine
@@ -224,11 +225,11 @@ All configuration is optional with sensible defaults. To customize:
 | `EMAIL_AUTO_SYNC_INTERVAL_SECONDS` | `300` | Interval between background mailbox syncs (minimum: 60 seconds) |
 | `EMAIL_AUTO_SYNC_MAX_RESULTS` | `20` | Maximum messages examined by each automatic sync |
 
-Email credentials are stored in `backend/data/email_config.json` with file permissions set to `600` (owner-only read/write).
+Email credentials are stored in `data/email_config.json` (at the repository root, alongside `workspace.db`) with file permissions set to `600` (owner-only read/write). The IMAP app password is stored in plaintext, so keep that file owner-only and never commit the `data/` directory.
 
 ## Email Automations
 
-Automations run entirely on your machine after new messages are synced from IMAP. Create a rule from **Automations** by choosing an email condition and one or more actions: save attachments, create a follow-up task, tag the email, or record a notification event.
+Automations run entirely on your machine after new messages are synced from IMAP. Create a rule from **Automations** by choosing an email condition and one or more actions: save attachments, create a follow-up task, tag the email, or log the match in the Done list. There is no push/desktop notification delivery — the "notify" action records an auditable artifact rather than pretending to deliver anything.
 
 The backend starts without waiting for the mailbox, then syncs a previously connected account in the background. It also starts an immediate background sync after an account is connected. Manual and automatic syncs share a lock to prevent overlapping runs.
 
@@ -280,22 +281,21 @@ The frontend is a vanilla JavaScript SPA with no build framework:
   - [memory.html](./docs/frontend/pages/memory.html.md): Memory/browser interface
   - [research.html](./docs/frontend/pages/research.html.md): Research agent controls
   - [agents.html](./docs/frontend/pages/agents.html.md): AI agent configuration
+  - `documents.html`: Document upload, listing, and per-document Q&A
   - `automations.html`: Rule builder and Done history for email automations
   - [settings.html](./docs/frontend/pages/settings.html.md): Application settings
-  - [agents.html](./docs/frontend/pages/agents.html.md): AI agent configuration
 
 ### Static Assets
 - **[css/globals.css](./docs/frontend/css/globals.css.md)**: CSS variables (design tokens) and base styles
-- **[css/page-theme.css](./docs/frontend/css/page-theme.css.md)**: Shared chrome for all pages
+- **`pages/page-theme.css`**: Shared chrome for all pages (lives next to the pages themselves, not in `css/`)
 - **[js/](./docs/frontend/js/)**: JavaScript modules:
   - [api.js](./docs/frontend/js/api.js.md): Wrapper for backend API calls
   - [app.js](./docs/frontend/js/app.js.md): Main application logic and routing
-  - [chat.js](./docs/frontend/js/chat.js.md): Chat interface functionality
+  - [chat.js](./docs/frontend/js/chat.js.md): Chat interface and message handling
   - [dock.js](./docs/frontend/js/dock.js.md): Application dock/navigation
   - [email.js](./docs/frontend/js/email.js.md): Email-specific functionality
-  - [toast.js](./docs/frontend/js/toast.js.md): Notification system
+  - [toast.js](./docs/frontend/js/toast.js.md): Notifications and the shared `confirmDialog`
   - [utils.js](./docs/frontend/js/utils.js.md): Utility functions and helpers
-  - [chat.js](./docs/frontend/js/chat.js.md): Chat message handling
 
 ## Development Guidelines
 

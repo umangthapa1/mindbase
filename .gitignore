@@ -51,6 +51,12 @@ data/
 uploads/
 *.db
 
+# Logs — may contain email subjects, senders and prompt text
+*.log
+
+# Local tool state
+.reticle/
+
 # Obsidian local state
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
