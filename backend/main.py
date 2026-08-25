@@ -83,189 +83,6 @@ async def _auto_email_sync_loop() -> None:
         await asyncio.to_thread(_background_email_sync_once)
         await asyncio.sleep(EMAIL_AUTO_SYNC_INTERVAL_SECONDS)
 
-# ── Email context helpers ──────────────────────────────────────────────────
-_EMAIL_PATTERNS = [
-    r'(check|show|get|read|fetch|list|look at|see|find|search|open|summari[sz]e|reply|respond|draft).{0,40}(email|gmail|mail|inbox|message)',
-    r'(email|gmail|mail|inbox|message).{0,40}(check|show|get|read|fetch|list|recent|latest|new|unread|from)',
-    r'(any|do i have|got any|have any|are there|were there).{0,30}(email|mail|message)',
-    r'(what|which).{0,30}(email|mail|message|inbox)',
-    r'(unread|unopened).{0,30}(email|mail|message)',
-    r'(email|mail|message).{0,20}(unread|unopened|new|from)',
-    r'emails?.{0,40}from',
-    r'from.{0,40}emails?',
-    r'\binbox\b',
-    r'\bgmail\b',
-]
-
-# Follow-up references ("summarize the one from leetcode") that only make sense
-# when emails were just shown — matched only if recent history listed emails.
-_EMAIL_FOLLOWUP = _re.compile(
-    r'\b(summari[sz]e|summary|reply|respond|draft|forward)\b'
-    r'|\b(read|open)\s+(the|that|this|it|first|second|third|last|latest)\b'
-    # "the one", "the google one", "that email", "the leetcode message", "first one"…
-    r'|\b(the|that|this|first|second|third|fourth|last|latest)\s+(?:[a-z0-9]+\s+)?(one|email|message|mail)\b'
-    r'|\bfrom\s+[a-z0-9._%+\-@]+',
-    _re.I,
-)
-
-def _history_shows_emails(history) -> bool:
-    """True if the conversation is in 'email mode' — a recent USER turn asked about
-    email (deterministic, pattern-based), or an assistant turn listed emails. Used so
-    short follow-ups like 'summarize the one from leetcode' resolve to email context."""
-    if not history:
-        return False
-    for msg in reversed(history[-6:]):
-        role = msg.get("role")
-        text = msg.get("content") or ""
-        if role == "user":
-            m = text.lower()
-            if any(_re.search(p, m) for p in _EMAIL_PATTERNS):
-                return True
-        elif role == "assistant":
-            if "Subject:" in text and ("From:" in text or "Received:" in text):
-                return True
-    return False
-
-def _is_email_query(message: str, history=None) -> bool:
-    msg = message.lower()
-    if any(_re.search(p, msg) for p in _EMAIL_PATTERNS):
-        return True
-    # A short follow-up referencing emails that were just listed.
-    if _history_shows_emails(history) and _EMAIL_FOLLOWUP.search(msg):
-        return True
-    # Keep email context for natural continuations such as "or Google?" and
-    # "what about Reddit?" after an inbox search.
-    if _history_shows_emails(history) and _re.match(r"^(?:or|and|what about)\s+\S", msg.strip()):
-        return True
-    return False
-
-def _extract_email_search_terms(message: str) -> dict:
-    """Pull out useful filters from the natural language query."""
-    msg = message.lower()
-    result = {"sender": None, "subject_keywords": [], "unread_only": False, "limit": 5, "want_body": False}
-
-    # unread intent
-    if any(w in msg for w in ["unread", "new ", "haven't read", "not read"]):
-        result["unread_only"] = True
-
-    # Intent to read a specific email in full (summarize / reply / open / "what does it say")
-    if any(w in msg for w in ["summari", "reply", "respond", "draft", "read the", "read that",
-                              "open the", "open that", "what does", "what's in", "whats in", "tell me about"]):
-        result["want_body"] = True
-        result["limit"] = 3
-
-    # "from X" sender hint
-    from_match = _re.search(r'\bfrom\s+([a-zA-Z0-9._%+\-@]+)', msg)
-    if from_match:
-        result["sender"] = from_match.group(1).strip()
-
-    # "the X email/one/message" → focus term (matched against sender or subject)
-    if not result["sender"]:
-        focus = _re.search(r'\bthe\s+([a-z0-9]{3,})\s+(?:email|one|message|mail)\b', msg)
-        if focus and focus.group(1) not in ("first", "second", "third", "last", "latest", "next"):
-            result["sender"] = focus.group(1).strip()
-
-    # "about X" / "regarding X" subject keywords
-    about_match = _re.search(r'\b(?:about|regarding|re:|subject)\s+["\']?([^"\',.?!]+)', msg)
-    if about_match:
-        result["subject_keywords"] = about_match.group(1).strip().split()
-
-    # A concise continuation after an email query, for example "or google?",
-    # is a topic search even though it contains no explicit email noun.
-    continuation = _re.match(r"^(?:or|and|what about)\s+(.+?)[?!.,]*$", msg.strip())
-    if continuation and not result["sender"] and not result["subject_keywords"]:
-        result["subject_keywords"] = continuation.group(1).strip().split()
-
-    # quantity hints
-    num_match = _re.search(r'\b(\d+)\s+email', msg)
-    if num_match:
-        result["limit"] = min(int(num_match.group(1)), 20)
-    elif any(w in msg for w in ["latest", "recent", "last"]):
-        result["limit"] = 5
-    elif "all" in msg:
-        result["limit"] = 20
-
-    return result
-
-
-def _email_term_variants(term: str) -> set[str]:
-    """Return conservative singular/plural variants for local email search."""
-    term = term.strip().lower()
-    if len(term) <= 3:
-        return {term}
-    variants = {term}
-    if term.endswith("ies") and len(term) > 4:
-        variants.add(term[:-3] + "y")
-    elif term.endswith("s") and not term.endswith("ss"):
-        variants.add(term[:-1])
-    else:
-        variants.add(term + "s")
-    return {variant for variant in variants if variant}
-
-def _build_email_context(db: Session, message: str) -> str:
-    """Query locally synced EmailDB and return a formatted context block.
-
-    Reading emails that have already been synced must work even while the IMAP
-    connection is offline or has not been restored after a server restart.
-    """
-
-    filters = _extract_email_search_terms(message)
-    q = db.query(EmailDB)
-
-    if filters["unread_only"]:
-        q = q.filter(EmailDB.is_unread == True)
-    if filters["sender"]:
-        # Match the term against the sender OR the subject (covers "from leetcode"
-        # as well as "the puzzle one").
-        like = f"%{filters['sender']}%"
-        q = q.filter(
-            EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like) |
-            EmailDB.snippet.ilike(like) | EmailDB.body.ilike(like)
-        )
-    if filters["subject_keywords"]:
-        for kw in filters["subject_keywords"][:2]:
-            variants = _email_term_variants(kw)
-            q = q.filter(or_(*[
-                EmailDB.sender.ilike(f"%{term}%") |
-                EmailDB.subject.ilike(f"%{term}%") |
-                EmailDB.snippet.ilike(f"%{term}%") |
-                EmailDB.body.ilike(f"%{term}%")
-                for term in variants
-            ]))
-
-    emails = q.order_by(EmailDB.received_at.desc()).limit(filters["limit"]).all()
-
-    if not emails:
-        qualifier = "unread " if filters["unread_only"] else ""
-        return f"[Gmail] No {qualifier}emails found matching that query."
-
-    # Include the full (trimmed) body when the user wants to read/summarize a
-    # specific email, or when the query narrowed to a single message.
-    include_body = filters["want_body"] or len(emails) == 1
-
-    lines = [f"[Gmail] {len(emails)} email(s) retrieved:\n"]
-    for i, e in enumerate(emails, 1):
-        unread_marker = " (unread)" if e.is_unread else ""
-        received = e.received_at.strftime("%b %d, %I:%M %p") if e.received_at else "unknown date"
-        block = (
-            f"{i}. From: {e.sender}{unread_marker}\n"
-            f"   Subject: {e.subject or '(no subject)'}\n"
-            f"   Received: {received}\n"
-        )
-        if include_body and (e.body or "").strip():
-            body = _re.sub(r"[ \t]+", " ", e.body).strip()[:1800]
-            block += f"   Full message:\n{body}\n"
-        else:
-            block += f"   Preview: {(e.snippet or '')[:200]}\n"
-        lines.append(block)
-    return "\n".join(lines)
-
-def _format_email_listing_response(email_context: str) -> str:
-    """Turn already-retrieved inbox metadata into a reliable, model-free reply."""
-    if email_context.startswith("[Gmail] "):
-        email_context = email_context[len("[Gmail] "):]
-    return f"Here are the matching emails from your local inbox:\n\n{email_context}"
-
 
 async def ensure_embedding_model_present():
     """Verify that nomic-embed-text is installed. If not, auto-pull in the background."""
@@ -421,6 +238,8 @@ def _is_email_query(message: str, history=None) -> bool:
     # A short follow-up referencing emails that were just listed.
     if _history_shows_emails(history) and _EMAIL_FOLLOWUP.search(msg):
         return True
+    # Keep email context for natural continuations such as "or Google?" and
+    # "what about Reddit?" after an inbox search.
     if _history_shows_emails(history) and _re.match(r"^(?:or|and|what about)\s+\S", msg.strip()):
         return True
     return False
@@ -456,6 +275,8 @@ def _extract_email_search_terms(message: str) -> dict:
     if about_match:
         result["subject_keywords"] = about_match.group(1).strip().split()
 
+    # A concise continuation after an email query, for example "or google?",
+    # is a topic search even though it contains no explicit email noun.
     continuation = _re.match(r"^(?:or|and|what about)\s+(.+?)[?!.,]*$", msg.strip())
     if continuation and not result["sender"] and not result["subject_keywords"]:
         result["subject_keywords"] = continuation.group(1).strip().split()
@@ -470,6 +291,21 @@ def _extract_email_search_terms(message: str) -> dict:
         result["limit"] = 20
 
     return result
+
+
+def _email_term_variants(term: str) -> set[str]:
+    """Return conservative singular/plural variants for local email search."""
+    term = term.strip().lower()
+    if len(term) <= 3:
+        return {term}
+    variants = {term}
+    if term.endswith("ies") and len(term) > 4:
+        variants.add(term[:-3] + "y")
+    elif term.endswith("s") and not term.endswith("ss"):
+        variants.add(term[:-1])
+    else:
+        variants.add(term + "s")
+    return {variant for variant in variants if variant}
 
 def _build_email_context(db: Session, message: str) -> str:
     """Query locally synced EmailDB and return a formatted context block.
@@ -828,6 +664,29 @@ async def delete_memory(memory_id: str):
         raise HTTPException(status_code=404, detail="Memory not found")
 
     return {"status": "deleted", "id": memory_id}
+
+# Requiring the client to echo this keeps a stray or replayed POST from emptying
+# the memory store — the same guard /api/reset uses, scoped to memories.
+MEMORY_CLEAR_CONFIRM_TOKEN = "CLEAR MEMORIES"
+
+@app.post("/api/memory/clear")
+async def clear_memories(data: ResetRequest):
+    """Delete every memory in a single call.
+
+    Settings used to do this by listing the memories and firing one DELETE each,
+    which is N round-trips and leaves a half-wiped store behind if any of them
+    fails. `clear_all` drops and recreates the Chroma collection instead.
+    """
+    if data.confirm != MEMORY_CLEAR_CONFIRM_TOKEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not confirmed. Send {{\"confirm\": \"{MEMORY_CLEAR_CONFIRM_TOKEN}\"}} to proceed.",
+        )
+
+    # Chroma's client is synchronous, so keep it off the event loop.
+    removed = await asyncio.to_thread(memory_manager.clear_all)
+    logger.warning("Cleared all memories: %d removed.", removed)
+    return {"status": "cleared", "removed": removed}
 
 # Notes endpoints
 def serialize_note(note: NoteDB):

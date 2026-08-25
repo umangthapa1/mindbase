@@ -6,7 +6,7 @@
   <title>Settings — Mindbase</title>
 <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../../css/globals.css?v=20260824">
+  <link rel="stylesheet" href="../css/globals.css?v=20260824">
   <link rel="stylesheet" href="page-theme.css?v=20260728">
   <style>
     .setting-row { display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--border-subtle); gap:12px; }
@@ -128,8 +128,8 @@
         </div>
       </div>
       <div class="setting-row">
-        <div><div class="setting-label">Max tokens</div><div class="setting-desc">Longest reply the model may produce, in tokens</div></div>
-        <input id="maxTokens" type="number" value="2048" min="100" max="10000" style="width:100px">
+        <div><div class="setting-label">Max tokens</div><div class="setting-desc">Longest reply the model may produce, in tokens (1–32768)</div></div>
+        <input id="maxTokens" type="number" value="2048" min="1" max="32768" style="width:100px">
       </div>
     </div>
 
@@ -169,7 +169,7 @@
       <div class="card-title">Accent Color</div>
       <div class="setting-desc" style="margin-bottom:14px">Highlight color across the app. Works with every theme.</div>
       <div class="accent-grid" id="accentGrid"></div>
-<div class="accent-custom-row" id="accentCustomRow" hidden>
+<div class="accent-custom-row" id="accentCustomRow">
         <span class="accent-custom-label">Custom</span>
         <span class="accent-custom-swatch" id="accentCustomSwatch"></span>
         <span class="accent-custom-hex" id="accentCustomHex">#8B5CF6</span>
@@ -257,10 +257,11 @@
   }
 
   async function loadModels() {
+    const sel = document.getElementById('defaultModel');
     try {
       const res = await fetch(`${API_BASE}/ollama/models`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const sel = document.getElementById('defaultModel');
       if (data.models) {
         data.models.forEach(m => {
           const opt = document.createElement('option');
@@ -268,9 +269,21 @@
           sel.appendChild(opt);
         });
       }
+      if (!sel.options.length) {
+        sel.innerHTML = '<option value="">No models installed</option>';
+        sel.disabled = true;
+        toast('Ollama is reachable but has no models. Run "ollama pull mistral" to add one.', 'info', 7000);
+        return;
+      }
       const saved = localStorage.getItem('defaultModel');
       if (saved) sel.value = saved;
-    } catch(e) {}
+    } catch (e) {
+      // This used to be `catch(e) {}`, which left the dropdown mysteriously blank
+      // on the one page someone would open to work out why Ollama isn't answering.
+      sel.innerHTML = '<option value="">Could not reach Ollama</option>';
+      sel.disabled = true;
+      toast('Could not load models: ' + e.message + ' — is Ollama running?', 'error', 7000);
+    }
   }
 
   function loadPrefs() {
@@ -361,12 +374,32 @@
   document.getElementById('backupBtn').addEventListener('click', () => toast('Your workspace database is the SQLite file at data/workspace.db — copy it to back it up. Use "Export all data" for a portable JSON snapshot.', 'info', 8000));
 
   document.getElementById('clearMemoriesBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('clearMemoriesBtn');
     if (!await confirmDialog('Clear all memories? This cannot be undone.', { confirmText: 'Clear all' })) return;
+
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Clearing…';
     try {
-      const memories = await fetch(`${API_BASE}/memory/list`).then(r=>r.json());
-      await Promise.all(memories.memories.map(m => fetch(`${API_BASE}/memory/${m.id}`,{method:'DELETE'})));
-      toast('All memories cleared.', 'ok');
-    } catch(e) { toast('Error: '+e.message, 'error'); }
+      // One call, not one DELETE per memory: the old fan-out could half-succeed
+      // and reported nothing when it did.
+      const res = await fetch(`${API_BASE}/memory/clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'CLEAR MEMORIES' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Failed (${res.status})`);
+      }
+      const { removed } = await res.json();
+      toast(`Cleared ${removed} memor${removed === 1 ? 'y' : 'ies'}.`, 'ok');
+    } catch (e) {
+      toast('Could not clear memories: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   });
 
   document.getElementById('deleteAllBtn').addEventListener('click', async () => {
@@ -466,7 +499,6 @@
     });
 
     const current = custom || active || '#8B5CF6';
-    accentCustomRow.hidden = false;
     accentCustomSwatch.style.background = current;
     accentCustomHex.textContent = current;
     colorInput.value = current;

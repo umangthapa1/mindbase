@@ -30,7 +30,7 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 - **Automation History**: A Done view with completed runs, source emails, created tasks, and downloadable saved files
 - **Task Management**: Create, schedule, and track tasks with natural language
 - **Calendar Integration**: Calendar view with task/event synchronization
-- **Notes System**: Rich text notes with tagging and memory integration
+- **Notes System**: Rich text notes with tagging and memory integration, plus debounced auto-save while you type (with an unsaved-changes guard if you close the tab mid-save)
 - **Research Assistant**: Deep research capabilities with automatic note saving
 
 ### Communication & Collaboration
@@ -39,11 +39,24 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 - **Conversation History**: Persistent chat history with automatic LLM-generated conversation titles
 - **Conversation Export**: Export individual chat conversations as formatted `.txt` files (including correct message timestamps and roles) directly from the chat header.
 - **Unified Context**: A single chat draws on your memories, notes, documents, tasks, calendar, and synced email
-- **Theme Changer**: Switch between light, dark, black-gold, blue-night, grey-ash, and Hellish Red themes via the dashboard.
+- **Theme Changer**: Six palettes — Dark, Light, Black Gold, Blue Night, Grey Ash, and Hellish Red — plus a **System (Auto)** mode that follows your OS light/dark preference. Switch from Settings; the choice persists and syncs across open tabs.
+- **Background Patterns**: Optional subtle workspace texture — none (clean), subtle grid, dot matrix, or mini crosses.
 - **Accent Color Selector**: Personalize the highlight color across all themes with 10 curated presets or a custom color picker — changes apply instantly and persist automatically.
-- **Message Copying**: Right-click any chat message to copy its content to clipboard.
+- **Message Copying**: Right-click any chat message to copy its content to clipboard, or use the copy button on any fenced code block.
 - **Full Data Backup**: Export all application data (conversations with their messages, notes, tasks, and memories) as a single JSON backup file from the Settings page.
 - **Workspace Reset**: "Delete all data" in Settings wipes every conversation, note, task, event, email, automation, memory, and document from the backend. Saved email credentials are deliberately left alone — disconnect the mailbox separately if you want those gone too.
+- **Clear Memories**: A separate Settings action that empties just the vector memory store, leaving chats, notes, and tasks intact.
+
+### Destructive actions
+
+Anything that deletes in bulk is guarded twice: the UI asks for confirmation, and the request body must echo a literal token that the backend checks before doing any work. A stray, replayed, or cross-site POST therefore can't wipe anything on its own.
+
+| Action | Endpoint | Required body |
+|--------|----------|---------------|
+| Delete all data | `POST /api/reset` | `{"confirm": "DELETE EVERYTHING"}` |
+| Clear all memories | `POST /api/memory/clear` | `{"confirm": "CLEAR MEMORIES"}` |
+
+Neither endpoint touches `data/email_config.json` — removing a saved mailbox is always an explicit, separate action (`POST /api/email/disconnect`).
 
 ### Security & Privacy
 - **100% Local**: All data stays on your machine
@@ -56,6 +69,7 @@ A comprehensive local-first AI workspace that combines a FastAPI backend with a 
 Mindbase includes a comprehensive theme system that allows you to customize the visual appearance of the application. Themes can be switched at any time from the Settings page and persist via localStorage.
 
 ### Available Themes
+- **System (Auto)**: Follows your operating system's light/dark preference and switches live if you change it
 - **Dark**: Classic dark theme with neutral accents
 - **Light**: Clean light theme for daytime use
 - **Black Gold**: Elegant dark theme with gold accents
@@ -70,6 +84,17 @@ Mindbase includes a comprehensive theme system that allows you to customize the 
 4. Your selection is saved automatically and restored on future visits
 
 All themes follow the same design principles and maintain accessibility standards for text contrast and usability.
+
+### Background Patterns
+
+Independently of the theme, Settings → Appearance can overlay a subtle texture on the workspace background:
+
+- **None (Clean)** — flat background, the default
+- **Subtle Grid** — faint 24px ruled grid
+- **Dot Matrix** — evenly spaced dots on a 20px lattice
+- **Mini Crosses** — two offset dot layers at 32px and 16px
+
+Patterns are drawn as `background-image` overlays on `body`, keyed off `html[data-pattern]` in `globals.css`. They use a low-opacity neutral grey rather than a theme variable, which keeps them legible on both light and dark palettes. Like the theme, the choice persists via `localStorage` and syncs across open tabs.
 
 ## Accent Color System
 
@@ -129,12 +154,13 @@ mindbase/
 │   ├── tasks_service.py     # Task and calendar management
 │   ├── research.py          # Offline research agent
 │   ├── imap_service.py      # Email synchronization (IMAP)
+│   ├── automations.py       # Email rule matching, actions, and run history
 │   └── models.py            # Pydantic models for API requests/responses
 │
 ├── frontend/                # Vanilla JavaScript SPA
 │   ├── index.html           # Main application shell
-│   ├── pages/               # Individual page views
-│   ├── css/                 # Stylesheets and design tokens
+│   ├── pages/               # Individual page views + page-theme.css
+│   ├── css/                 # globals.css design tokens and base styles
 │   └── js/                  # Application logic and utilities
 │
 ├── data/                    # Persistent storage (gitignored)
@@ -143,6 +169,7 @@ mindbase/
 │   └── email_config.json    # Email credentials (chmod 600)
 │
 └── uploads/                 # Document uploads (gitignored)
+    └── email-attachments/   # Files saved by email automations
 ```
 
 ### Data Flow
@@ -294,6 +321,8 @@ The frontend is a vanilla JavaScript SPA with no build framework:
   - [chat.js](./docs/frontend/js/chat.js.md): Chat interface and message handling
   - [dock.js](./docs/frontend/js/dock.js.md): Application dock/navigation
   - [email.js](./docs/frontend/js/email.js.md): Email-specific functionality
+  - `theme.js`: Theme + background-pattern persistence, OS `prefers-color-scheme` following, and cross-tab sync (`window.MindbaseTheme`)
+  - `accent.js`: Accent-color presets, custom picker state, and contrast derivation (`window.MindbaseAccent`)
   - [toast.js](./docs/frontend/js/toast.js.md): Notifications and the shared `confirmDialog`
   - [utils.js](./docs/frontend/js/utils.js.md): Utility functions and helpers
 
@@ -324,13 +353,20 @@ source venv/bin/activate
 # Install test dependencies
 pip install -r backend/requirements-dev.txt
 
-# Run tests
+# Run tests (from the repository root)
 pytest backend/tests/
 ```
 
+`backend/conftest.py` puts `backend/` on `sys.path`, so the flat top-level imports resolve when running from the repository root.
+
 ### Test Categories
-- **Unit Tests**: Individual function testing in `backend/tests/`
-- **Manual Verification**: Standalone scripts like `backend/test.py` and `backend/test_scheduling.py`
+- **Unit Tests** in `backend/tests/` — pytest smoke coverage for the hot paths:
+  - `test_parse_natural_due.py`: natural-language due-date parsing in `tasks_service.py`
+  - `test_memory_upsert.py`: memory upsert edge cases (new vs. existing note)
+  - `test_email_query_regression.py`: email-intent detection and search-term extraction
+  - `test_intelligence_context.py`: chat context assembly
+  - `test_automations.py`: email rule matching and action execution
+- **Manual Verification**: Standalone scripts run directly with `python`, not collected by pytest — `backend/test.py` and `backend/test_scheduling.py`
 - **Integration**: Full system testing through manual use
 
 ## License
