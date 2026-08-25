@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
   <title>Research — Mindbase</title>
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
@@ -40,7 +41,7 @@
   <header class="page-header">
     <span class="page-title">Research</span>
     <a href="/" class="back-link">
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
       Chat
     </a>
   </header>
@@ -177,7 +178,7 @@
       el.className = 'step-card';
       el.dataset.step = data.number;
       el.innerHTML = `<div class="step-card-title" style="display:flex;align-items:center;gap:8px">
-        <svg width="14" height="14" viewBox="0 0 14 14" class="spin" style="flex-shrink:0;color:var(--text-tertiary)"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="20" stroke-dashoffset="7"/></svg>
+        <svg width="14" height="14" viewBox="0 0 14 14" class="spin" aria-hidden="true" style="flex-shrink:0;color:var(--text-tertiary)"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="20" stroke-dashoffset="7"/></svg>
         Step ${data.number}: ${data.query}</div>
         <div style="font-size:12px;color:var(--text-tertiary)">Gathering findings…</div>`;
       document.getElementById('stepsContainer').appendChild(el);

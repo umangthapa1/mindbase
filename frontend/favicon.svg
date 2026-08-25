@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Mindbase">
+  <!--
+    Monochrome mark: three linked nodes over a rounded base.
+    Colours flip with the OS colour scheme (see the style block below).
+    Note: double hyphens are forbidden in XML comments; double hyphens in
+    CSS custom property names are also unavailable here because an SVG served
+    as image/svg+xml is parsed as strict XML with no access to page CSS.
+    Hardcoded hex values are used instead.
+  -->
+  <style>
+    .base { fill: #000000; }
+    .ink  { fill: #e6e6e6; stroke: #e6e6e6; }
+    @media (prefers-color-scheme: light) {
+      .base { fill: #f4f5f7; }
+      .ink  { fill: #101010; stroke: #101010; }
+    }
+  </style>
+
+  <rect class="base" x="1" y="1" width="30" height="30" rx="7.5"/>
+
+  <g class="ink" fill="none" stroke-width="2" stroke-linecap="round">
+    <line x1="16" y1="11" x2="10.5" y2="21"/>
+    <line x1="16" y1="11" x2="21.5" y2="21"/>
+    <line x1="10.5" y1="21" x2="21.5" y2="21"/>
+  </g>
+
+  <g class="ink" stroke="none">
+    <circle cx="16" cy="10.5" r="3.4"/>
+    <circle cx="10.5" cy="21.5" r="3"/>
+    <circle cx="21.5" cy="21.5" r="3"/>
+  </g>
+</svg>
