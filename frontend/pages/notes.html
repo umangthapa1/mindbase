@@ -178,7 +178,7 @@
         });
         noteToSave.title = title;
         loadNotes();
-        setSaveStatus('Saved');
+        setSaveStatus('Saved just now');
       } catch (e) {
         console.error(e);
         setSaveStatus('');
@@ -200,7 +200,7 @@
         noteToSave.title = title;
         loadNotes();
         if (currentNote && currentNote.id === noteToSave.id) {
-          setSaveStatus('Saved');
+          setSaveStatus('Saved just now');
         }
       } catch(e) {
         console.error(e);

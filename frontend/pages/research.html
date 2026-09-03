@@ -202,7 +202,7 @@
       document.getElementById('reportSection').style.display = 'block';
       document.getElementById('currentStep').textContent = 'Research complete.';
       document.getElementById('progressFill').style.width = '100%';
-      if (data.saved_to_notes) { const btn=document.getElementById('saveReportBtn'); btn.textContent='Saved'; btn.disabled=true; }
+      if (data.saved_to_notes) { const btn=document.getElementById('saveReportBtn'); btn.textContent='Saved just now'; btn.disabled=true; }
     }
     if (data.type === 'error') {
       document.getElementById('currentStep').textContent = 'Failed: ' + data.message;
@@ -215,7 +215,7 @@
     btn.disabled=true; btn.textContent='Saving…';
     try {
       await fetch(`${API_BASE}/research/save`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({report:currentReport})});
-      btn.textContent = 'Saved';
+      btn.textContent = 'Saved just now';
     } catch(e) { btn.textContent='Error'; btn.disabled=false; }
   });
 </script>
