@@ -25,6 +25,9 @@ _EMBED_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
 _PULL_TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=10.0)
 _QUICK_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
 _HEALTH_TIMEOUT = httpx.Timeout(connect=5.0, read=5.0, write=5.0, pool=5.0)
+# Keep the active chat model in memory between turns so users do not pay the
+# model-load cost again after a short pause.
+_CHAT_KEEP_ALIVE = "10m"
 
 
 async def _get_client() -> httpx.AsyncClient:
@@ -143,6 +146,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
+            "keep_alive": _CHAT_KEEP_ALIVE,
             **kwargs,
         }
         opts = self._build_options(temperature, num_predict)
@@ -179,6 +183,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": True,
+            "keep_alive": _CHAT_KEEP_ALIVE,
             **kwargs
         }
         opts = self._build_options(temperature, num_predict)
