@@ -122,15 +122,15 @@
         <select id="defaultModel" style="width:auto;min-width:160px"></select>
       </div>
       <div class="setting-row">
-        <div><div class="setting-label">Temperature</div><div class="setting-desc">Higher = more creative</div></div>
+        <div><div class="setting-label">Temperature</div><div class="setting-desc">Lower is focused; higher is more creative</div></div>
         <div style="display:flex;align-items:center;gap:10px;flex:1;max-width:200px;margin-left:16px">
           <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
           <span class="range-val" id="tempVal">0.7</span>
         </div>
       </div>
       <div class="setting-row">
-        <div><div class="setting-label">Max tokens</div><div class="setting-desc">Longest reply the model may produce, in tokens (1–32768)</div></div>
-        <input id="maxTokens" type="number" value="2048" min="1" max="32768" style="width:100px">
+        <div><div class="setting-label">Response length</div><div class="setting-desc">Maximum reply size. 1024 is a concise default.</div></div>
+        <input id="maxTokens" type="number" value="1024" min="128" max="32768" step="128" style="width:100px" aria-label="Maximum response tokens">
       </div>
     </div>
 
@@ -292,7 +292,7 @@
     loadPattern();
     document.getElementById('temperature').value = localStorage.getItem('temperature') || '0.7';
     document.getElementById('tempVal').textContent = localStorage.getItem('temperature') || '0.7';
-    document.getElementById('maxTokens').value = localStorage.getItem('maxTokens') || '2048';
+    document.getElementById('maxTokens').value = localStorage.getItem('maxTokens') || '1024';
     document.getElementById('autoMemory').checked = JSON.parse(localStorage.getItem('autoMemory') ?? 'true');
     document.getElementById('includeMemory').checked = JSON.parse(localStorage.getItem('includeMemory') ?? 'true');
   }

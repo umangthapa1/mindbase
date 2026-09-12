@@ -1506,6 +1506,13 @@ textarea:focus {
   max-height: 60px;
 }
 
+.typing-label {
+  align-self: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 300;
+}
+
 .typing-dots {
   background: var(--assistant-bubble);
   border: 1px solid var(--assistant-border);

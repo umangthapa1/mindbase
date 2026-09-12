@@ -22,6 +22,10 @@ RELEVANCE_THRESHOLD = 0.42
 MAX_HISTORY_MESSAGES = 28
 SUMMARIZE_AFTER = 18
 MAX_CONTEXT_CHARS = 12_000
+SIMPLE_QUERY_RE = re.compile(
+    r"^(?:what is|what's|who is|who's|where is|when is|how do i|how to|define|explain)\b",
+    re.I,
+)
 
 # Auto-title: generate after this many messages if title still looks like a placeholder
 MIN_HISTORY_FOR_TITLE = 2
@@ -411,6 +415,12 @@ class ChatIntelligence:
         sources: List[str] = []
         actions_taken = actions_taken or []
 
+        # Simple factual prompts do not benefit from a semantic memory search;
+        # skipping it avoids an embedding round-trip and keeps answers focused.
+        use_memory = include_memory and not (
+            len(user_message.split()) <= 12 and SIMPLE_QUERY_RE.search(user_message.strip())
+        )
+
         context_parts: List[str] = []
 
         # Gather schedule, memory, and document contexts in parallel. All three are
@@ -422,7 +432,7 @@ class ChatIntelligence:
         # avoids the embedding round-trip.
         (schedule_ctx, sched_src), (mem_ctx, mem_src), (doc_ctx, doc_src) = await asyncio.gather(
             self._gather_schedule(db, user_message, intent),
-            self._gather_memories(user_message, intent) if include_memory else _no_context(),
+            self._gather_memories(user_message, intent) if use_memory else _no_context(),
             self._gather_documents(user_message, intent),
         )
         if schedule_ctx:

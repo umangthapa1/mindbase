@@ -411,6 +411,7 @@ class ChatManager {
         inner.innerHTML = `
             <div class="typing-indicator" id="typingIndicator" aria-label="Assistant is typing">
                 <div class="msg-avatar" aria-hidden="true">AI</div>
+                <span class="typing-label">Thinking…</span>
                 <div class="typing-dots" aria-hidden="true">
                     <span></span><span></span><span></span>
                 </div>
@@ -504,7 +505,27 @@ class ChatManager {
     setTyping(visible) {
         const t = $('#typingIndicator');
         if (t) t.classList.toggle('visible', visible);
+        if (visible) this.setTypingLabel('Thinking…');
         if (visible) this.scrollBottom();
+    }
+
+    setTypingLabel(text) {
+        const label = document.querySelector('#typingIndicator .typing-label');
+        if (label) label.textContent = text;
+    }
+
+    formatContextSources(sources) {
+        const labels = {
+            profile_memories: 'memory',
+            semantic_memory: 'memory',
+            notes: 'notes',
+            documents: 'documents',
+            schedule: 'calendar and tasks',
+            tasks: 'tasks',
+            calendar: 'calendar',
+            emails: 'email',
+        };
+        return [...new Set((sources || []).map(source => labels[source] || source.replaceAll('_', ' ')))];
     }
 
     /* ── Send button state ── */
@@ -634,8 +655,12 @@ class ChatManager {
                 // Handle meta / action info
                 if (data.meta) {
                     const parts = [];
-                    if (data.meta.intent) parts.push(data.meta.intent);
-                    if (data.meta.context?.length) parts.push(data.meta.context.join(', '));
+                    const sources = this.formatContextSources(data.meta.context);
+                    if (sources.length) {
+                        const sourceText = sources.join(', ');
+                        parts.push(`Used ${sourceText}`);
+                        this.setTypingLabel(`Checking ${sourceText}…`);
+                    }
                     if (parts.length) contextHint = parts.join(' · ');
                     if (data.meta.actions?.length) {
                         const actionNote = data.meta.actions

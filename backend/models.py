@@ -52,7 +52,7 @@ class ChatRequest(BaseModel):
     # Preferences the Settings page stores per-browser and sends with each turn.
     # The defaults reproduce the previous hard-coded behaviour, so a client that
     # omits them (or an older cached page) keeps working unchanged.
-    max_tokens: Optional[int] = Field(default=None, ge=1, le=32768)
+    max_tokens: Optional[int] = Field(default=1024, ge=1, le=32768)
     include_memory: bool = True
     auto_memory: bool = True
 
