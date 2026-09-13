@@ -1,12 +1,13 @@
-# Documentation
+# Mindbase Documentation
 
-This directory contains generated documentation for the Mindbase AI project.
+Reference documentation for the current Mindbase source tree.
 
-## Structure
+## Sections
 
-- `backend/` - Documentation for backend modules
-- `frontend/` - Documentation for frontend components
+- [`backend/`](./backend/) - FastAPI routes, services, configuration, data models, and tests
+- [`frontend/`](./frontend/) - The chat shell, workspace pages, JavaScript modules, and styles
+- [`pages/`](./pages/) - Logseq page documentation
+- [`journals/`](./journals/) - Journal documentation
+- [`logseq/`](./logseq/) - Logseq configuration documentation
 
-## Generation
-
-Documentation is automatically generated from source code comments and docstrings.
+The module pages are maintained alongside the source. When behavior changes, update the relevant page and its section index in the same change. The root project guide is [../README.md](../README.md).

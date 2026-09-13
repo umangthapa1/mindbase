@@ -809,6 +809,14 @@ The chat module tracks:
 - Reject malformed JSON from backend
 - Validate URLs before making fetch requests
 
+## Current response experience
+
+- The typing indicator shows `Thinking…` before the first response chunk.
+- When metadata reports retrieved context, the indicator changes to a readable status such as `Checking memory, notes…`.
+- Completed replies can show source hints such as `Used memory, documents`.
+- Streaming begins the assistant bubble on the first non-empty chunk and preserves partial content if the stream is interrupted.
+- Conversation titles can display a provisional user-message title while the backend generates a final title in the background.
+
 ### Secure Communication
 - Use HTTPS for all API calls in production
 - Validate SSL certificates

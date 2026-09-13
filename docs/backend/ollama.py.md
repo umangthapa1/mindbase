@@ -92,3 +92,10 @@ await ollama_client.set_model("llamav2")
 - Only communicates with locally configured Ollama instance
 - No authentication required for local Ollama (by design)
 - Sensitive data never sent to external services
+
+## Current performance behavior
+
+- Chat generation sends `keep_alive=10m` to Ollama so the active model remains warm between turns.
+- A shared pooled `httpx.AsyncClient` reuses local HTTP connections.
+- Streaming reads have a bounded idle timeout while allowing long responses to continue as chunks arrive.
+- Embedding, health, model-list, and model-pull requests use separate timeout budgets.

@@ -108,3 +108,13 @@ The application uses FastAPI's lifespan event handler to:
 - HTTP exceptions raised for API errors with appropriate status codes
 - Ollama connection errors handled gracefully
 - Validation errors from Pydantic models automatically converted to 422 responses
+
+## Chat stream metadata
+
+`POST /api/chat/messages` emits Server-Sent Events with:
+
+- `meta` - detected intent, context source names, and successful actions.
+- `chunk` - incremental assistant text.
+- `done` - completion marker and persisted assistant message ID.
+
+The route persists the user message before generation and the assistant message after streaming. Auto-title generation is scheduled in the background; optional memory extraction runs after the response content is generated.

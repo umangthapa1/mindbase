@@ -332,6 +332,17 @@ except ValidationError as e:
 
 ### Integration
 - Works seamlessly with FastAPI's dependency injection
+
+## Current chat request options
+
+`ChatRequest` supports per-turn controls sent by the Settings page:
+
+- `model` selects an installed Ollama model.
+- `agent_prompt` adds an optional agent instruction.
+- `temperature` controls response variation.
+- `max_tokens` limits response length and defaults to `1024`.
+- `include_memory` controls memory and note context retrieval.
+- `auto_memory` controls post-response memory extraction.
 - Compatible with SQLAlchemy ORM objects
 - Supports complex nested data structures
 - Enables evolution of API with backward compatibility considerations

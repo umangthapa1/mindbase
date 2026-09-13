@@ -144,3 +144,11 @@ Returns a `PreparedChatResult` containing:
 - Memory and document searches use vector similarity efficiently
 - Context gathering runs in parallel where possible
 - Results cached per conversation turn when appropriate
+
+## Current implementation notes
+
+- `prepare_chat()` gathers schedule, memory, and document context concurrently with `asyncio.gather()`.
+- Simple short factual prompts can skip memory retrieval to avoid an unnecessary embedding request.
+- Retrieved source names are returned in chat metadata for the frontend to show as readable context hints.
+- Long histories are summarized after the configured threshold, then trimmed to the context character budget.
+- Context failures degrade to an answer with the remaining available sources.
