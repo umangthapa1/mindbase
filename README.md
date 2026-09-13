@@ -1,383 +1,229 @@
-# Mindbase AI Workspace
+# Mindbase
 
-A comprehensive local-first AI workspace that combines a FastAPI backend with a vanilla-JS SPA frontend, powered by local Ollama models. Features include ChromaDB vector memory, SQLite storage, document Q&A, offline research, tasks/calendar with natural-language scheduling, and IMAP email integration - all running entirely on your machine with no cloud dependencies or third-party API keys.
+### A local-first AI workspace for thinking, planning, and getting things done.
 
-## Table of Contents
-- [Features](#features)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Prerequisites](#prerequisites)
-- [Configuration](#configuration)
-- [Project Structure](#project-structure)
-- [Backend Documentation](#backend-documentation)
-- [Frontend Documentation](#frontend-documentation)
-- [Development Guidelines](#development-guidelines)
-- [Testing](#testing)
-- [License](#license)
+Mindbase brings chat, memory, notes, documents, email, tasks, calendar events, and offline research into one private workspace. It runs on your machine using [Ollama](https://ollama.com/), so your workspace data stays local and the core AI features do not require cloud API keys.
 
-## Features
+> **Status:** Personal project in active development. The application is usable, but interfaces and APIs may evolve.
 
-### Core AI Capabilities
-- **Local LLM Integration**: Works with any Ollama model (default: mistral)
-- **Vector Memory**: ChromaDB-backed long-term memory for context retention
-- **Document Intelligence**: Upload, process, and query documents with local embeddings
-- **Offline Research Agent**: Multi-step research capability without internet
-- **Natural Language Processing**: Understand and execute complex requests
+## What it does
 
-### Productivity Tools
-- **Email Integration**: Full IMAP support for Gmail and other email providers
-- **Email Automations**: Local rules that react to new mail by saving attachments, creating tasks, tagging messages, and logging matches to the Done list
-- **Automation History**: A Done view with completed runs, source emails, created tasks, and downloadable saved files
-- **Task Management**: Create, schedule, and track tasks with natural language
-- **Calendar Integration**: Calendar view with task/event synchronization
-- **Notes System**: Rich text notes with tagging and memory integration, plus debounced auto-save while you type (with an unsaved-changes guard if you close the tab mid-save)
-- **Research Assistant**: Deep research capabilities with automatic note saving
+- **Chat with context** from your memories, notes, documents, tasks, calendar, and synced email.
+- **Remember important information** with a ChromaDB-backed long-term memory store.
+- **Ask questions about documents** using local embeddings and retrieval.
+- **Manage tasks and calendar events** with natural-language scheduling.
+- **Work with email** through IMAP, including local email search and deterministic automations.
+- **Research offline** with a multi-step local research assistant.
+- **Write notes** with Markdown, preview mode, tagging, and debounced auto-save.
+- **Personalize the workspace** with themes, background patterns, and accent colors.
 
-### Communication & Collaboration
-- **Real-time Chat**: Streaming responses with context awareness
-- **Model Switching**: Change AI models on-the-fly without restart
-- **Conversation History**: Persistent chat history with automatic LLM-generated conversation titles
-- **Conversation Export**: Export individual chat conversations as formatted `.txt` files (including correct message timestamps and roles) directly from the chat header.
-- **Unified Context**: A single chat draws on your memories, notes, documents, tasks, calendar, and synced email
-- **Theme Changer**: Six palettes — Dark, Light, Black Gold, Blue Night, Grey Ash, and Hellish Red — plus a **System (Auto)** mode that follows your OS light/dark preference. Switch from Settings; the choice persists and syncs across open tabs.
-- **Background Patterns**: Optional subtle workspace texture — none (clean), subtle grid, dot matrix, or mini crosses.
-- **Accent Color Selector**: Personalize the highlight color across all themes with 10 curated presets or a custom color picker — changes apply instantly and persist automatically.
-- **Message Copying**: Right-click any chat message to copy its content to clipboard, or use the copy button on any fenced code block.
-- **Full Data Backup**: Export all application data (conversations with their messages, notes, tasks, and memories) as a single JSON backup file from the Settings page.
-- **Workspace Reset**: "Delete all data" in Settings wipes every conversation, note, task, event, email, automation, memory, and document from the backend. Saved email credentials are deliberately left alone — disconnect the mailbox separately if you want those gone too.
-- **Clear Memories**: A separate Settings action that empties just the vector memory store, leaving chats, notes, and tasks intact.
+## Quick start
 
-### Destructive actions
+### 1. Install the prerequisites
 
-Anything that deletes in bulk is guarded twice: the UI asks for confirmation, and the request body must echo a literal token that the backend checks before doing any work. A stray, replayed, or cross-site POST therefore can't wipe anything on its own.
+- Python 3.10 or newer (3.11+ recommended)
+- [Ollama](https://ollama.com/) installed and running
 
-| Action | Endpoint | Required body |
-|--------|----------|---------------|
-| Delete all data | `POST /api/reset` | `{"confirm": "DELETE EVERYTHING"}` |
-| Clear all memories | `POST /api/memory/clear` | `{"confirm": "CLEAR MEMORIES"}` |
-
-Neither endpoint touches `data/email_config.json` — removing a saved mailbox is always an explicit, separate action (`POST /api/email/disconnect`).
-
-### Security & Privacy
-- **100% Local**: All data stays on your machine
-- **No Third-party APIs**: Zero reliance on external AI services
-- **Secure Credentials**: Email passwords stored locally with restricted permissions
-- **Open Design**: Transparent codebase with clear data flow
-
-## Theme System
-
-Mindbase includes a comprehensive theme system that allows you to customize the visual appearance of the application. Themes can be switched at any time from the Settings page and persist via localStorage.
-
-### Available Themes
-- **System (Auto)**: Follows your operating system's light/dark preference and switches live if you change it
-- **Dark**: Classic dark theme with neutral accents
-- **Light**: Clean light theme for daytime use
-- **Black Gold**: Elegant dark theme with gold accents
-- **Blue Night**: Cool dark theme with blue highlights
-- **Grey Ash**: Sophisticated light theme with grey tones
-- **Hellish Red**: Dramatic dark theme with vibrant red accents
-
-### How to Change Themes
-1. Open the Settings page (click the gear icon in the dock)
-2. Select your preferred theme from the "Theme" dropdown
-3. The change applies immediately across the entire application
-4. Your selection is saved automatically and restored on future visits
-
-All themes follow the same design principles and maintain accessibility standards for text contrast and usability.
-
-### Background Patterns
-
-Independently of the theme, Settings → Appearance can overlay a subtle texture on the workspace background:
-
-- **None (Clean)** — flat background, the default
-- **Subtle Grid** — faint 24px ruled grid
-- **Dot Matrix** — evenly spaced dots on a 20px lattice
-- **Mini Crosses** — two offset dot layers at 32px and 16px
-
-Patterns are drawn as `background-image` overlays on `body`, keyed off `html[data-pattern]` in `globals.css`. They use a low-opacity neutral grey rather than a theme variable, which keeps them legible on both light and dark palettes. Like the theme, the choice persists via `localStorage` and syncs across open tabs.
-
-## Accent Color System
-
-Mindbase includes a global accent color selector that works **on top of any theme**, allowing you to personalize the highlight color used for buttons, links, focus rings, and interactive elements without changing the overall theme.
-
-### How It Works
-- The accent system overrides only the accent-related CSS variables (`--accent`, `--accent-hover`, `--accent-light`, `--accent-border`, `--accent-ring`, `--accent-glow`, `--accent-text`)
-- It persists across reloads via `localStorage`
-- Changes apply instantly — no reload or save button required
-- Each theme has a default accent; selecting "Reset to default" restores the theme's original accent
-- Works seamlessly with all six themes (Dark, Light, Black Gold, Blue Night, Grey Ash, Hellish Red)
-
-### Available Presets
-10 curated accent presets are provided:
-- **Blue** (`#3B82F6`)
-- **Purple** (`#8B5CF6`)
-- **Violet** (`#7C3AED`)
-- **Cyan** (`#06B6D4`)
-- **Green** (`#22C55E`)
-- **Emerald** (`#10B981`)
-- **Orange** (`#F97316`)
-- **Red** (`#EF4444`)
-- **Pink** (`#EC4899`)
-- **Yellow** (`#EAB308`)
-
-### Custom Color Picker
-In addition to presets, a **custom color picker** (🎨 button) lets you choose any hex color. The last custom color is remembered so you can easily return to it.
-
-### How to Change the Accent
-1. Open the Settings page (click the gear icon in the dock)
-2. Scroll to the **Accent Color** section
-3. Click any preset swatch to apply it instantly, or click the 🎨 button to pick a custom color
-4. Your selection is saved automatically and restored on future visits
-5. Click **Reset to default** to return to the theme's built-in accent
-
-### Technical Details
-- Implemented in `frontend/js/accent.js` as `window.MindbaseAccent`
-- Computes accessible text contrast (`--accent-text`) automatically (black or white) based on WCAG luminance
-- Generates hover, soft, border, ring, and glow variants from the base color
-- Cross-tab synchronization via `storage` events
-- Responds to theme changes — if no custom accent is active, switching themes re-derives the appropriate default accent
-
-## Architecture
-
-Mindbase follows a clean separation between frontend and backend:
-
-```
-mindbase/
-├── backend/                  # FastAPI application (Python)
-│   ├── main.py              # Application entrypoint and API routes
-│   ├── config.py            # Configuration and environment variables
-│   ├── database.py          # SQLAlchemy models and database management
-│   ├── ollama.py            # Ollama client for LLM interactions
-│   ├── intelligence.py      # Chat orchestration and context handling
-│   ├── memory.py            # Long-term memory management (ChromaDB)
-│   ├── documents.py         # Document processing and Q&A system
-│   ├── tasks_service.py     # Task and calendar management
-│   ├── research.py          # Offline research agent
-│   ├── imap_service.py      # Email synchronization (IMAP)
-│   ├── automations.py       # Email rule matching, actions, and run history
-│   └── models.py            # Pydantic models for API requests/responses
-│
-├── frontend/                # Vanilla JavaScript SPA
-│   ├── index.html           # Main application shell
-│   ├── pages/               # Individual page views + page-theme.css
-│   ├── css/                 # globals.css design tokens and base styles
-│   └── js/                  # Application logic and utilities
-│
-├── data/                    # Persistent storage (gitignored)
-│   ├── workspace.db         # SQLite database
-│   ├── chroma/              # ChromaDB vector store
-│   └── email_config.json    # Email credentials (chmod 600)
-│
-└── uploads/                 # Document uploads (gitignored)
-    └── email-attachments/   # Files saved by email automations
-```
-
-### Data Flow
-1. **Frontend**: User interacts with vanilla-JS SPA
-2. **API Layer**: Requests sent to FastAPI backend via `/api/*` endpoints
-3. **Backend Services**: 
-   - Route handlers in `main.py` delegate to specialized services
-   - Services process requests using local resources (Ollama, DB, ChromaDB)
-   - Background tasks handle email sync, research, etc.
-4. **Storage**: 
-   - Structured data in SQLite (`workspace.db`)
-   - Vector embeddings in ChromaDB (`data/chroma/`)
-   - File uploads in `uploads/`
-   - Email credentials in `data/email_config.json`
-
-## Quick Start
+Pull one chat model and the embedding model used by memory and documents:
 
 ```bash
-# Clone and enter directory
-git clone https://github.com/umangthapa1/mindbase
+ollama pull mistral
+ollama pull nomic-embed-text
+```
+
+You can use another Ollama chat model by changing `DEFAULT_MODEL` or selecting one from Settings.
+
+### 2. Start Mindbase
+
+On Linux or macOS:
+
+```bash
+git clone https://github.com/umangthapa1/mindbase.git
 cd mindbase
-
-# Choose your startup method:
-# Linux/macOS:
+chmod +x start.sh
 ./start.sh
+```
 
-# Windows:
+On Windows, run:
+
+```text
 start.bat
 ```
 
-The startup script will:
-1. Verify Ollama is running locally
-2. Create a Python virtual environment (`venv/`)
-3. Install required Python packages
-4. Start the FastAPI server with auto-reload
-5. Open the application in your default browser at `http://localhost:8000`
+The startup script checks Ollama, creates `venv/` when needed, installs backend dependencies, and starts the development server with auto-reload.
 
-## Prerequisites
+Open **[http://localhost:8000](http://localhost:8000)** when the server is ready.
 
-- **Python 3.10+** (3.11+ recommended)
-- **[Ollama](https://ollama.com)** installed and running locally
-- **Required Ollama models**:
-  ```bash
-  ollama pull mistral          # Default chat model
-  ollama pull nomic-embed-text # Required for document/memory embeddings
-  ```
-
-### Manual Setup
-
-If you prefer to set up manually:
+### Manual setup
 
 ```bash
-# Create virtual environment
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+source venv/bin/activate
 pip install -r backend/requirements.txt
-
-# Start the server
 cd backend
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
+## Main areas
+
+| Area | Purpose |
+| --- | --- |
+| Chat | Streaming conversations with local model selection and workspace context |
+| Dashboard | Overview of activity, tasks, events, and workspace status |
+| Notes | Markdown notes with preview, tagging, and memory integration |
+| Documents | Upload documents, search their content, and ask questions |
+| Memory | Browse, search, and manage long-term workspace memories |
+| Tasks | Track priorities, status, tags, and natural-language due dates |
+| Calendar | View and manage events alongside scheduled tasks |
+| Email | Sync and search an IMAP mailbox locally |
+| Automations | Run email rules that save attachments, create tasks, tag messages, and record runs |
+| Research | Generate structured research reports locally and save them to notes |
+| Settings | Configure models, response length, memory behavior, themes, accents, export, and reset actions |
+
+## Email automations
+
+Email automations run locally after new messages are synced from IMAP. Create rules from **Automations** by choosing a condition and one or more actions:
+
+- Save attachments to `uploads/email-attachments/`
+- Create a follow-up task
+- Add a tag to the email
+- Record an auditable event in the **Done** list
+
+Rules are idempotent per rule and email, so repeated syncs do not create duplicate work. Attachments are limited to 25 MB each and 20 attachments per email. The current `notify` action records an event locally; it does not send push or desktop notifications.
+
+## Privacy and local storage
+
+Mindbase is designed for local use:
+
+- Chat generation and embeddings run through your local Ollama instance.
+- Structured data is stored in SQLite at `data/workspace.db`.
+- Vector memory is stored in `data/chroma/`.
+- Uploaded files are stored in `uploads/`.
+- Email credentials are stored locally in `data/email_config.json` with owner-only permissions.
+
+Keep `data/` and `uploads/` out of version control. Email app passwords are stored in plaintext locally, so protect the machine and the credentials file.
+
+### Destructive actions
+
+Bulk deletion requires both UI confirmation and an exact confirmation token in the request body:
+
+| Action | Endpoint | Required body |
+| --- | --- | --- |
+| Delete all data | `POST /api/reset` | `{"confirm": "DELETE EVERYTHING"}` |
+| Clear memories | `POST /api/memory/clear` | `{"confirm": "CLEAR MEMORIES"}` |
+
+These operations do not remove `data/email_config.json`. Disconnect a mailbox separately with `POST /api/email/disconnect`.
+
 ## Configuration
 
-All configuration is optional with sensible defaults. To customize:
+Mindbase works with defaults, but environment variables can be used to customize the server. Copy the included example to `backend/.env`:
 
-1. Copy `backend/.env.example` to `backend/.env`
-2. Edit the `.env` file to override defaults:
+```bash
+cp backend/.env.example backend/.env
+```
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
+| Variable | Default | Description |
+| --- | --- | --- |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | `DEFAULT_MODEL` | `mistral` | Fallback chat model |
-| `API_HOST` | `127.0.0.1` | API server bind address |
-| `API_PORT` | `8000` | API server port |
-| `CORS_ORIGINS` | *(unset)* | Comma-separated allow-list for CORS |
-| `EMAIL_AUTO_SYNC` | `true` | Automatically sync a connected mailbox in the background |
-| `EMAIL_AUTO_SYNC_INTERVAL_SECONDS` | `300` | Interval between background mailbox syncs (minimum: 60 seconds) |
-| `EMAIL_AUTO_SYNC_MAX_RESULTS` | `20` | Maximum messages examined by each automatic sync |
+| `API_HOST` | `127.0.0.1` | API bind address |
+| `API_PORT` | `8000` | API port |
+| `CORS_ORIGINS` | unset | Comma-separated CORS allow-list |
+| `EMAIL_AUTO_SYNC` | `true` | Sync a connected mailbox in the background |
+| `EMAIL_AUTO_SYNC_INTERVAL_SECONDS` | `300` | Background sync interval; minimum 60 seconds |
+| `EMAIL_AUTO_SYNC_MAX_RESULTS` | `20` | Maximum messages examined per automatic sync |
 
-Email credentials are stored in `data/email_config.json` (at the repository root, alongside `workspace.db`) with file permissions set to `600` (owner-only read/write). The IMAP app password is stored in plaintext, so keep that file owner-only and never commit the `data/` directory.
+The application creates its data directories automatically on startup.
 
-## Email Automations
+## Architecture
 
-Automations run entirely on your machine after new messages are synced from IMAP. Create a rule from **Automations** by choosing an email condition and one or more actions: save attachments, create a follow-up task, tag the email, or log the match in the Done list. There is no push/desktop notification delivery — the "notify" action records an auditable artifact rather than pretending to deliver anything.
+```text
+Browser
+  |
+  |  Vanilla HTML, CSS, and JavaScript
+  v
+FastAPI application
+  |
+  +-- Chat orchestration and streaming
+  +-- Tasks, calendar, notes, documents, and email services
+  +-- SQLite for structured records
+  +-- ChromaDB for vector memory
+  +-- Ollama for local generation and embeddings
+```
 
-The backend starts without waiting for the mailbox, then syncs a previously connected account in the background. It also starts an immediate background sync after an account is connected. Manual and automatic syncs share a lock to prevent overlapping runs.
+The frontend has no build step. The backend is a FastAPI application with synchronous SQLAlchemy persistence and asynchronous service integrations.
 
-Each rule is idempotent per email: the same rule cannot create duplicate tasks or artifacts for the same message. Attachments are saved locally in `uploads/email-attachments/`; files are capped at 25 MB each and 20 attachments per email. Completed work appears in **Automations → Done**, where saved files can be downloaded.
+## Project structure
 
-## Project Structure
+```text
+mindbase/
+├── backend/
+│   ├── main.py             # FastAPI application and API routes
+│   ├── config.py           # Environment configuration and data paths
+│   ├── database.py         # SQLAlchemy models and initialization
+│   ├── intelligence.py     # Chat intent, context, and prompt assembly
+│   ├── ollama.py            # Local Ollama client
+│   ├── memory.py            # ChromaDB memory operations
+│   ├── documents.py         # Document processing and retrieval
+│   ├── tasks_service.py     # Tasks, calendar, and date parsing
+│   ├── imap_service.py      # IMAP synchronization
+│   ├── automations.py       # Email rules and automation run history
+│   ├── research.py          # Offline research agent
+│   └── tests/                # Focused backend tests
+├── frontend/
+│   ├── index.html            # Main chat application
+│   ├── pages/                # Dashboard and workspace pages
+│   ├── css/                  # Shared styles and design tokens
+│   └── js/                   # Frontend modules and API client
+├── data/                     # Local runtime data; gitignored
+├── uploads/                  # Local uploads; gitignored
+├── start.sh                 # Linux/macOS startup script
+└── start.bat                # Windows startup script
+```
 
-For detailed documentation of each file, see the `docs/` folder:
-- [Backend File Documentation](./docs/backend/)
-- [Frontend File Documentation](./docs/frontend/)
+Detailed file documentation is available in [`docs/`](./docs/), including [backend documentation](./docs/backend/) and [frontend documentation](./docs/frontend/).
 
-## Backend Documentation
+## Development
 
-The backend consists of these key modules:
+Backend dependencies:
 
-### Core Application
-- **[main.py](./docs/backend/main.py.md)**: Main FastAPI application with all API routes
-- **[config.py](./docs/backend/config.py.md)**: Environment configuration and path constants
-- **[database.py](./docs/backend/database.py.md)**: SQLAlchemy setup, models, and migrations
-- **[models.py](./docs/backend/models.py.md)**: Pydantic models for request/validation
+```bash
+source venv/bin/activate
+pip install -r backend/requirements-dev.txt
+```
 
-### AI Services
-- **[ollama.py](./docs/backend/ollama.py.md)**: Client for communicating with local Ollama instance
-- **[intelligence.py](./docs/backend/intelligence.py.md)**: Chat orchestration, context gathering, and prompt engineering
-- **[memory.py](./docs/backend/memory.py.md)**: Long-term memory management using ChromaDB
-- **[documents.py](./docs/backend/documents.py.md)**: Document processing, embedding, and Q&A system
-- **[research.py](./docs/backend/research.py.md)**: Offline multi-step research agent
+Useful development practices:
 
-### Productivity Services
-- **[tasks_service.py](./docs/backend/tasks_service.py.md)**: Task management, calendar, and natural language date parsing
-- **[imap_service.py](./docs/backend/imap_service.py.md)**: IMAP email synchronization (SSL/TLS support)
-- **automations.py**: Deterministic email-rule matching, action execution, artifact tracking, and run serialization
-
-### Supporting Modules
-- Various utility modules and test files
-
-## Frontend Documentation
-
-The frontend is a vanilla JavaScript SPA with no build framework:
-
-### Application Structure
-- **[index.html](./docs/frontend/index.html.md)**: Main application shell containing the chat interface
-- **[pages/](./docs/frontend/pages/)**: Individual HTML pages for different views:
-  - [dashboard.html](./docs/frontend/pages/dashboard.html.md): Overview dashboard
-  - [tasks.html](./docs/frontend/pages/tasks.html.md): Task management interface
-  - [calendar.html](./docs/frontend/pages/calendar.html.md): Calendar view
-  - [email.html](./docs/frontend/pages/email.html.md): Email client interface
-  - [notes.html](./docs/frontend/pages/notes.html.md): Notes creation and management
-  - [memory.html](./docs/frontend/pages/memory.html.md): Memory/browser interface
-  - [research.html](./docs/frontend/pages/research.html.md): Research agent controls
-  - [agents.html](./docs/frontend/pages/agents.html.md): AI agent configuration
-  - `documents.html`: Document upload, listing, and per-document Q&A
-  - `automations.html`: Rule builder and Done history for email automations
-  - [settings.html](./docs/frontend/pages/settings.html.md): Application settings
-
-### Static Assets
-- **[css/globals.css](./docs/frontend/css/globals.css.md)**: CSS variables (design tokens) and base styles
-- **`pages/page-theme.css`**: Shared chrome for all pages (lives next to the pages themselves, not in `css/`)
-- **[js/](./docs/frontend/js/)**: JavaScript modules:
-  - [api.js](./docs/frontend/js/api.js.md): Wrapper for backend API calls
-  - [app.js](./docs/frontend/js/app.js.md): Main application logic and routing
-  - [chat.js](./docs/frontend/js/chat.js.md): Chat interface and message handling
-  - [dock.js](./docs/frontend/js/dock.js.md): Application dock/navigation
-  - [email.js](./docs/frontend/js/email.js.md): Email-specific functionality
-  - `theme.js`: Theme + background-pattern persistence, OS `prefers-color-scheme` following, and cross-tab sync (`window.MindbaseTheme`)
-  - `accent.js`: Accent-color presets, custom picker state, and contrast derivation (`window.MindbaseAccent`)
-  - [toast.js](./docs/frontend/js/toast.js.md): Notifications and the shared `confirmDialog`
-  - [utils.js](./docs/frontend/js/utils.js.md): Utility functions and helpers
-
-## Development Guidelines
-
-### Backend Practices
-- **Logging**: Use `logging.getLogger(__name__)` in all modules, never `print()`
-- **Async/Sync Balance**: FastAPI is async but SQLAlchemy is sync - offload DB calls with `asyncio.to_thread()`
-- **Error Handling**: Ollama client raises exceptions - catch `OllamaError` for soft failures
-- **Database Changes**: Modify `database.py::_migrate_sqlite()` with idempotent `ALTER TABLE` statements
-- **CORS**: Never use `allow_origins=["*"]` with `allow_credentials=True`
-
-### Frontend Practices
-- **Styling**: Use CSS variables from `globals.css` - avoid hardcoded colors
-- **No Build Step**: Plain JavaScript - no transpilation or bundling
-- **Design Tokens**: All colors come from CSS `:root` variables
-- **Cache Busting**: Update `?v=` query parameters when changing CSS/JS files
-- **Accessibility**: Maintain proper color contrast and focus indicators
+- Use the project logger instead of `print()` in backend modules.
+- Offload synchronous SQLAlchemy work from async routes with `asyncio.to_thread()` when appropriate.
+- Catch `OllamaError` for recoverable local model failures.
+- Keep database migrations idempotent.
+- Use the shared CSS variables in `frontend/css/globals.css`.
+- Preserve accessibility, focus states, and keyboard interaction when changing the UI.
 
 ## Testing
 
-Run the test suite to verify functionality:
+Run the backend test suite from the repository root:
 
 ```bash
-# Activate virtual environment
 source venv/bin/activate
-
-# Install test dependencies
 pip install -r backend/requirements-dev.txt
-
-# Run tests (from the repository root)
-pytest backend/tests/
+pytest -q backend/tests/
 ```
 
-`backend/conftest.py` puts `backend/` on `sys.path`, so the flat top-level imports resolve when running from the repository root.
+Current coverage includes natural-language due dates, memory upserts, email query routing, chat context assembly, and email automations. The standalone scripts `backend/test.py` and `backend/test_scheduling.py` are manual checks rather than pytest tests.
 
-### Test Categories
-- **Unit Tests** in `backend/tests/` — pytest smoke coverage for the hot paths:
-  - `test_parse_natural_due.py`: natural-language due-date parsing in `tasks_service.py`
-  - `test_memory_upsert.py`: memory upsert edge cases (new vs. existing note)
-  - `test_email_query_regression.py`: email-intent detection and search-term extraction
-  - `test_intelligence_context.py`: chat context assembly
-  - `test_automations.py`: email rule matching and action execution
-- **Manual Verification**: Standalone scripts run directly with `python`, not collected by pytest — `backend/test.py` and `backend/test_scheduling.py`
-- **Integration**: Full system testing through manual use
+## Documentation
+
+- [Backend documentation](./docs/backend/)
+- [Frontend documentation](./docs/frontend/)
+- [Backend README](./backend/README.md)
+- [Frontend README](./frontend/README.md)
 
 ## License
 
-Mindbase is a personal/local project. No external license is declared - it's intended for individual use and learning purposes.
+No external license is currently declared. Mindbase is a personal/local project intended for individual use and learning.
 
-## Acknowledgments
+## Built with
 
-Built with:
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern, fast web framework
-- [Ollama](https://ollama.com/) - Local LLM runner
-- [ChromaDB](https://www.trychroma.com/) - AI-native vector database
-- [SQLAlchemy](https://www.sqlalchemy.org/) - Python SQL toolkit
-- [VanillaJS](https://vanilla-js.com/) - Plain JavaScript for frontend.
+[FastAPI](https://fastapi.tiangolo.com/) · [Ollama](https://ollama.com/) · [ChromaDB](https://www.trychroma.com/) · [SQLAlchemy](https://www.sqlalchemy.org/) · [Vanilla JS](https://vanilla-js.com/)
