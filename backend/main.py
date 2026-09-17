@@ -374,6 +374,50 @@ def _format_email_listing_response(email_context: str) -> str:
         email_context = email_context[len("[Gmail] "):]
     return f"Here are the matching emails from your local inbox:\n\n{email_context}"
 
+
+def _is_task_lookup(message: str) -> bool:
+    """Whether this is a request to inspect tasks, not change them."""
+    msg = message.lower()
+    has_task_word = bool(_re.search(r"\b(tasks?|todos?)\b", msg))
+    lookup_language = bool(_re.search(
+        r"\b(check|show|list|what|which|any|have|pending|open)\b", msg
+    ))
+    action_language = bool(_re.search(
+        r"\b(add|create|delete|remove|complete|finish|reschedule|move|update|set)\b", msg
+    ))
+    return has_task_word and lookup_language and not action_language
+
+
+def _build_task_lookup_response(db: Session, message: str) -> str:
+    """Return a grounded response for an explicit pending-task lookup."""
+    msg = message.lower()
+    tasks = db.query(TaskDB).filter(TaskDB.status.in_(["pending", "in_progress"]))
+
+    topic_match = _re.search(r"\b(?:(?:related|realted)\s+to|about|for)\s+(.+?)(?:[?!.,]|$)", msg)
+    if topic_match:
+        terms = [
+            term for term in _re.findall(r"[a-z0-9]{3,}", topic_match.group(1))
+            if term not in {"the", "and", "with", "task", "tasks", "pending"}
+        ]
+        if terms:
+            tasks = tasks.filter(or_(*[
+                TaskDB.title.ilike(f"%{term}%") |
+                TaskDB.description.ilike(f"%{term}%") |
+                TaskDB.tags.ilike(f"%{term}%")
+                for term in terms[:4]
+            ]))
+
+    matches = tasks.order_by(TaskDB.updated_at.desc()).limit(10).all()
+    qualifier = f" related to “{topic_match.group(1).strip()}”" if topic_match else ""
+    if not matches:
+        return f"No pending tasks{qualifier} found."
+
+    lines = [f"Pending tasks{qualifier}:"]
+    for task in matches:
+        due = f" — due {task.due_date.strftime('%Y-%m-%d')}" if task.due_date else " — no due date"
+        lines.append(f"- **{task.title}** ({task.status}){due}")
+    return "\n".join(lines)
+
 @app.get("/api/health")
 async def health_check():
     ollama_health = await ollama_client.check_health()
@@ -473,6 +517,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     email_context_block = ""
     direct_email_response = ""
     direct_action_response = ""
+    direct_task_response = ""
     actions_taken = []
     if _is_email_query(request.message, history):
         email_context_block = _build_email_context(db, request.message)
@@ -485,12 +530,15 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             if not _extract_email_search_terms(request.message)["want_body"]:
                 direct_email_response = _format_email_listing_response(email_context_block)
 
-    if direct_email_response:
-        # Simple inbox listings are completely local: avoid model discovery and
-        # generic context gathering so the SSE response starts right away.
+    if not direct_email_response and _is_task_lookup(request.message):
+        direct_task_response = _build_task_lookup_response(db, request.message)
+
+    if direct_email_response or direct_task_response:
+        # Simple inbox and task listings are completely local: avoid model
+        # discovery and generic context gathering so the SSE response starts right away.
         model = "local-inbox"
-        intent = "email"
-        context_sources = ["emails"]
+        intent = "email" if direct_email_response else "planning"
+        context_sources = ["emails"] if direct_email_response else ["tasks"]
         messages = []
     else:
         try:
@@ -498,7 +546,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         except RuntimeError as e:
             raise HTTPException(status_code=503, detail=str(e))
 
-    if not _is_email_query(request.message, history):
+    if not _is_email_query(request.message, history) and not direct_task_response:
         actions_taken = await task_manager.process_with_history(
             request.message, history, db, model=model
         )
@@ -517,7 +565,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             context_sources = ["tasks"]
         messages = []
 
-    if not direct_email_response and not direct_action_response:
+    if not direct_email_response and not direct_task_response and not direct_action_response:
         prepared = await chat_intelligence.prepare_chat(
             user_message=request.message,
             history=history,
@@ -537,7 +585,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     # so the LLM reads it instead of relying on the schedule/task context injected by
     # chat_intelligence. Insert right after the first system message (index 0) if one
     # exists, otherwise prepend to the front.
-    if email_context_block and not direct_email_response and not direct_action_response:
+    if email_context_block and not direct_email_response and not direct_task_response and not direct_action_response:
         email_sys = {
             "role": "system",
             "content": (
@@ -564,8 +612,8 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         }
         yield f"data: {json.dumps({'meta': meta})}\n\n"
 
-        if direct_email_response or direct_action_response:
-            response_text = direct_email_response or direct_action_response
+        if direct_email_response or direct_task_response or direct_action_response:
+            response_text = direct_email_response or direct_task_response or direct_action_response
             yield f"data: {json.dumps({'chunk': response_text})}\n\n"
         else:
             async for chunk in ollama_client.stream_generate(
