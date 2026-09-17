@@ -1454,7 +1454,7 @@ If a field is not present or mentioned in the user's request, set it to null (or
 
 Schema:
 {{
-  "intent": "create_task" | "update_task_priority" | "update_task_status" | "complete_task" | "reschedule_task" | "create_event" | "reschedule_event" | "delete_event" | "other",
+  "intent": "create_task" | "update_task_priority" | "update_task_status" | "complete_task" | "delete_task" | "reschedule_task" | "create_event" | "reschedule_event" | "delete_event" | "other",
   "title": "Clean title of the task/event (remove date, time, priority, tags, status words, and action prefixes like 'add task' or 'put on calendar')",
   "description": "Short description of the task/event if specified",
   "priority": "high" | "medium" | "low" | null,
@@ -1532,7 +1532,7 @@ Examples:
 
         intent = data.get("intent")
         if intent not in (
-            "create_task", "complete_task", "update_task_priority", "update_task_status",
+            "create_task", "complete_task", "delete_task", "update_task_priority", "update_task_status",
             "reschedule_task", "create_event", "reschedule_event", "delete_event",
         ):
             return []
@@ -1569,6 +1569,31 @@ Examples:
                     False,
                     f"Couldn't find an open task matching “{target}”."
                 ).to_dict()]
+
+        # Handle delete_task.  This must be an actual database mutation; otherwise
+        # the general chat model can claim a task was deleted when nothing changed.
+        if intent == "delete_task":
+            target = data.get("target_title") or data.get("title")
+            if not target:
+                return []
+            task = self.find_task_by_title(db, target, open_only=False)
+            if not task:
+                return [ActionResult(
+                    "delete_task",
+                    False,
+                    f"Couldn't find a task matching “{target}”."
+                ).to_dict()]
+            title = task.title
+            task_id = task.id
+            db.delete(task)
+            db.commit()
+            return [ActionResult(
+                "delete_task",
+                True,
+                f"Deleted task: **{title}**",
+                task_id,
+                "task",
+            ).to_dict()]
 
         # Handle update_task_priority
         if intent == "update_task_priority":
@@ -1912,6 +1937,24 @@ Examples:
         updated = self._try_update_task_status(text, db)
         if updated:
             return [updated.to_dict()]
+
+        # Deterministic fallback for explicit task deletion when the scheduling
+        # model is unavailable or declines to emit JSON.
+        delete_match = re.match(r"^(?:delete|remove)\s+(?:the\s+)?task\s+(.+?)[.!]*$", text, re.I)
+        if delete_match:
+            target = delete_match.group(1).strip()
+            task = self.find_task_by_title(db, target, open_only=False)
+            if not task:
+                return [ActionResult(
+                    "delete_task", False, f"Couldn't find a task matching “{target}”."
+                ).to_dict()]
+            title = task.title
+            task_id = task.id
+            db.delete(task)
+            db.commit()
+            return [ActionResult(
+                "delete_task", True, f"Deleted task: **{title}**", task_id, "task"
+            ).to_dict()]
 
         # --- Create task ---
         create_match = None

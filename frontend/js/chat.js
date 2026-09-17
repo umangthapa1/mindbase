@@ -411,9 +411,11 @@ class ChatManager {
         inner.innerHTML = `
             <div class="typing-indicator" id="typingIndicator" aria-label="Assistant is typing">
                 <div class="msg-avatar" aria-hidden="true">AI</div>
-                <span class="typing-label">Thinking…</span>
-                <div class="typing-dots" aria-hidden="true">
-                    <span></span><span></span><span></span>
+                <div class="typing-bubble">
+                    <span class="typing-label">Thinking…</span>
+                    <div class="typing-dots" aria-hidden="true">
+                        <span></span><span></span><span></span>
+                    </div>
                 </div>
             </div>
         `;
@@ -505,7 +507,7 @@ class ChatManager {
     setTyping(visible) {
         const t = $('#typingIndicator');
         if (t) t.classList.toggle('visible', visible);
-        if (visible) this.setTypingLabel('Working…');
+        if (visible) this.setTypingLabel('Thinking…');
         if (visible) this.scrollBottom();
     }
 
