@@ -1491,7 +1491,7 @@ textarea:focus {
 /* ── Typing indicator ── */
 .typing-indicator {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-start;
   opacity: 0;
   max-height: 0;
@@ -1507,20 +1507,25 @@ textarea:focus {
 }
 
 .typing-label {
-  align-self: center;
   color: var(--text-tertiary);
   font-size: 12px;
-  font-weight: 300;
+  font-weight: 400;
 }
 
-.typing-dots {
+.typing-bubble {
   background: var(--assistant-bubble);
   border: 1px solid var(--assistant-border);
   border-radius: 13px;
   border-bottom-left-radius: 4px;
-  padding: 12px 16px;
+  padding: 9px 12px;
   display: flex;
-  gap: 5px;
+  gap: 9px;
+  align-items: center;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
   align-items: center;
 }
 

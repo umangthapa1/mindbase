@@ -176,9 +176,11 @@ _EMAIL_PATTERNS = [
     r'\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
     r'\b(email|emails?|mail|messages?|inbox|gmail).*\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b',
 
-    # Sender-focused queries
-    r'\b(from\s+|sender\s+|who\s+is\s+from\s+|messages\s+from\s+|email\s+from\s+|received\s+from\s+|got\s+email\s+from)\b.*\b([a-zA-Z0-9._%+\-@]+)',
-    r'\b([a-zA-Z0-9._%+\-@]+).*\b(from\s+|sender\s+|who\s+is\s+from\s+|messages\s+from\s+|email\s+from\s+|received\s+from\s+|got\s+email\s+from)\b',
+    # Sender-focused queries.  Keep the email noun adjacent to "from": a bare
+    # "from 8 am to 1 pm" is a time range in a calendar request, not a sender.
+    r'\b(?:messages?|emails?|mail|inbox|gmail)\s+from\s+[a-zA-Z][a-zA-Z0-9._%+\-@]*\b',
+    r'\b(?:received|got)\s+(?:an?\s+)?(?:messages?|emails?|mail)\s+from\s+[a-zA-Z][a-zA-Z0-9._%+\-@]*\b',
+    r'\b(?:sender|who\s+is\s+(?:this\s+)?from)\s+[a-zA-Z][a-zA-Z0-9._%+\-@]*\b',
 
     # Content/topic-focused queries
     r'\b(about\s+|regarding\s+|concerning\s+|topic\s+|subject\s+|regarding\s+|re:)\s*.*?\b(email|emails?|mail|messages?|inbox|gmail)\b',
@@ -470,9 +472,10 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     # so it doesn't create a task called "Email Check" instead of fetching emails.
     email_context_block = ""
     direct_email_response = ""
+    direct_action_response = ""
+    actions_taken = []
     if _is_email_query(request.message, history):
         email_context_block = _build_email_context(db, request.message)
-        actions_taken = []
         if email_context_block:
             actions_taken.append({"type": "email_context", "summary": "Retrieved emails from Gmail"})
             # Listing headers/previews does not need an LLM round-trip. Returning the
@@ -500,7 +503,21 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             request.message, history, db, model=model
         )
 
-    if not direct_email_response:
+    # Scheduling actions have already been committed by task_manager.  Do not make
+    # a second, serial model call merely to paraphrase their confirmation: it doubles
+    # the time to first visible response for requests such as "add an event …".
+    successful_actions = [a for a in actions_taken if a.get("success")]
+    if successful_actions:
+        direct_action_response = "\n\n".join(a["message"] for a in successful_actions)
+        if any(a.get("item_type") == "event" for a in successful_actions):
+            intent = "calendar"
+            context_sources = ["calendar"]
+        else:
+            intent = "planning"
+            context_sources = ["tasks"]
+        messages = []
+
+    if not direct_email_response and not direct_action_response:
         prepared = await chat_intelligence.prepare_chat(
             user_message=request.message,
             history=history,
@@ -520,7 +537,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     # so the LLM reads it instead of relying on the schedule/task context injected by
     # chat_intelligence. Insert right after the first system message (index 0) if one
     # exists, otherwise prepend to the front.
-    if email_context_block and not direct_email_response:
+    if email_context_block and not direct_email_response and not direct_action_response:
         email_sys = {
             "role": "system",
             "content": (
@@ -547,8 +564,8 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         }
         yield f"data: {json.dumps({'meta': meta})}\n\n"
 
-        if direct_email_response:
-            response_text = direct_email_response
+        if direct_email_response or direct_action_response:
+            response_text = direct_email_response or direct_action_response
             yield f"data: {json.dumps({'chunk': response_text})}\n\n"
         else:
             async for chunk in ollama_client.stream_generate(

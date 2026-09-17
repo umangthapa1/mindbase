@@ -505,7 +505,7 @@ class ChatManager {
     setTyping(visible) {
         const t = $('#typingIndicator');
         if (t) t.classList.toggle('visible', visible);
-        if (visible) this.setTypingLabel('Thinking…');
+        if (visible) this.setTypingLabel('Working…');
         if (visible) this.scrollBottom();
     }
 
@@ -619,6 +619,11 @@ class ChatManager {
         this.updateCharCount(0, $('#charCounter'));
         this.isLoading = true;
         this.setTyping(true);
+        if (/\b(event|meeting|appointment|calendar|schedule)\b/i.test(message)) {
+            this.setTypingLabel('Creating calendar event…');
+        } else if (/\b(task|todo|remind)\b/i.test(message)) {
+            this.setTypingLabel('Updating tasks…');
+        }
         this.setSendLoading(true);
 
         // Append user message immediately

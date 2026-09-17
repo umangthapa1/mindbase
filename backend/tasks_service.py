@@ -1358,6 +1358,16 @@ class TaskManager:
         if not text:
             return []
 
+        # A short "what about X?" after discussing the schedule is a lookup, not
+        # permission to create a new task.  In particular, do this before carrying
+        # a date from the prior turn into the LLM scheduling parser: that combination
+        # could turn "What about Powerpoint" into a fabricated task due today.
+        lookup = re.match(r"^(?:what|how)\s+about\s+(.+?)[?!.]*$", text, re.I)
+        if lookup:
+            fragment = lookup.group(1).strip()
+            if self.find_task_by_title(db, fragment) or self.find_event_by_title(db, fragment):
+                return []
+
         actions = await self.process_user_message(text, db, model=model)
         if actions:
             return actions
@@ -2103,6 +2113,25 @@ Examples:
         sections: List[str] = []
 
         open_q = db.query(TaskDB).filter(TaskDB.status.in_(["pending", "in_progress"]))
+
+        # A named item in a terse follow-up ("What about Powerpoint?") deserves
+        # its schedule context even though it contains no generic task/calendar
+        # keyword.  This lets the chat answer about the existing item rather than
+        # treating the phrase as an instruction to create one.
+        if not full:
+            reference_terms = [
+                word for word in re.findall(r"[a-z0-9]{4,}", query.lower())
+                if word not in {"what", "about", "that", "this", "with", "have"}
+            ]
+            full = any(
+                db.query(TaskDB.id)
+                .filter(func.lower(TaskDB.title).ilike(f"%{term}%"))
+                .first()
+                or db.query(CalendarEventDB.id)
+                .filter(func.lower(CalendarEventDB.title).ilike(f"%{term}%"))
+                .first()
+                for term in reference_terms
+            )
         open_count = open_q.count()
 
         def _date_bucket(field, lower=None, upper=None, upper_inclusive=False, include_null=False):
@@ -2247,7 +2276,7 @@ Examples:
                 sections.append("### Calendar events\n" + "\n".join(lines))
                 sources.append("calendar_events")
 
-        if open_count and planning_intent:
+        if open_count and (planning_intent or full):
             sources.append("tasks")
 
         return "\n\n".join(sections), list(dict.fromkeys(sources))

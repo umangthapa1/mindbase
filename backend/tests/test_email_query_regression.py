@@ -29,3 +29,13 @@ def test_short_or_followup_remains_an_email_query_and_finds_sender():
     history = [{"role": "user", "content": "any emails about invoices?"}]
     assert _is_email_query("or google?", history)
     assert "Google" in _build_email_context(db, "or google?")
+
+
+def test_event_time_range_is_not_misclassified_as_an_email_sender():
+    message = "Add an event on Monday: Quiz by science and IT club from 8 am to 1 pm."
+
+    assert not _is_email_query(message)
+
+
+def test_email_from_named_sender_remains_an_email_query():
+    assert _is_email_query("Show me emails from Alice")
