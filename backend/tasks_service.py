@@ -783,10 +783,48 @@ class TaskManager:
     def _reschedule_event_from_text(
         self, db: Session, event: CalendarEventDB, when_text: str
     ) -> Optional[ActionResult]:
+        # "change the time from 8 AM to 9 AM" describes a start-time shift,
+        # not a new one-hour event. Preserve the existing duration and use the
+        # second time as the new start. This must run before generic range parsing.
+        shift = re.search(
+            r"\b(?:change|move|reschedule|update)\b.*?\bfrom\s+"
+            r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s+(?:to|until)\s+"
+            r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b",
+            when_text,
+            re.I,
+        )
+        if shift:
+            new_start = _parse_clock(
+                shift.group(4), shift.group(5), shift.group(6) or shift.group(3), event.start_at.date()
+            )
+            duration = (
+                event.end_at - event.start_at
+                if event.end_at and event.start_at
+                else timedelta(hours=1)
+            )
+            new_end = new_start + duration
+            updated = self.update_event(db, event, new_start, new_end)
+            return ActionResult(
+                "reschedule_event",
+                True,
+                f"Updated calendar: **{updated.title}** — {self._format_event_when(new_start, new_end)}",
+                updated.id,
+                "event",
+            )
+
         _, parsed_start, parsed_end = parse_event_timing(when_text)
         if parsed_start:
             new_start = parsed_start
-            new_end = parsed_end or (new_start + timedelta(hours=1))
+            # `parse_event_timing` supplies a default one-hour end for a lone
+            # clock time. Keep the old duration unless the user specified a real
+            # time range.
+            has_explicit_range = parse_time_range(when_text, new_start.date()) is not None
+            duration = (
+                event.end_at - event.start_at
+                if event.end_at and event.start_at
+                else timedelta(hours=1)
+            )
+            new_end = parsed_end if has_explicit_range and parsed_end else new_start + duration
         else:
             _, date_hint = parse_natural_due(when_text)
             if not date_hint:
@@ -1189,7 +1227,8 @@ class TaskManager:
     ) -> Optional[str]:
         """Find the most recent task title the user mentioned creating or talking about."""
         task_create_pat = re.compile(
-            r"(?:add|create|new)\s+task[:\s]+(.+)|task[:\s]+(.+)|remind me to\s+(.+)|todo[:\s]+(.+)",
+            r"(?:add|create)\s+(?:a\s+)?(?:new\s+)?task[:\s]+(.+)|"
+            r"new\s+task[:\s]+(.+)|task[:\s]+(.+)|remind me to\s+(.+)|todo[:\s]+(.+)",
             re.I,
         )
         task_ref_pat = re.compile(
@@ -1209,6 +1248,26 @@ class TaskManager:
             if m:
                 fragment = next(g for g in m.groups() if g)
                 return fragment.strip()
+        return None
+
+    def _find_recent_task_from_history(
+        self, history: List[Dict[str, str]], db: Session
+    ) -> Optional[TaskDB]:
+        """Resolve pronouns such as "that" to the task just shown in chat."""
+        for msg in reversed(history):
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content", "")
+            for pattern in (
+                r"(?:Created|Deleted) task:\s*\*\*(.+?)\*\*",
+                r"-\s+\*\*(.+?)\*\*\s*\((?:pending|in progress)\)",
+                r"Task added:\s*.*?(?:-\s*)?\*{0,2}Title:\*{0,2}\s*(.+?)(?:\n|$)",
+            ):
+                match = re.search(pattern, content, re.I)
+                if match:
+                    task = self.find_task_by_title(db, match.group(1))
+                    if task:
+                        return task
         return None
 
     def _find_pending_calendar_request(
@@ -1358,6 +1417,33 @@ class TaskManager:
         if not text:
             return []
 
+        # Read-only calendar questions must never be passed into the action
+        # extractor. Small models can turn "what events ..." into create_event.
+        if (
+            re.search(r"\b(events?|calendar|agenda|schedule)\b", text, re.I)
+            and re.search(r"\b(what|which|show|list|check|any|have|when)\b", text, re.I)
+            and not re.search(r"\b(add|create|delete|remove|cancel|reschedule|move|update|set|book)\b", text, re.I)
+        ):
+            return []
+
+        # "mark that as complete" refers to the task just shown by the assistant.
+        # Resolve and commit it before invoking the model, so the reply cannot
+        # claim a completion that never reached the database.
+        completion_followup = re.match(
+            r"^(?:mark\s+)?(?:that|this|it)(?:\s+(?:task|one))?\s+(?:as\s+)?(?:complete|completed|done)[.!?]*$",
+            text,
+            re.I,
+        )
+        if completion_followup:
+            task = self._find_recent_task_from_history(history, db)
+            if task:
+                task.status = "completed"
+                task.updated_at = datetime.utcnow()
+                db.commit()
+                return [ActionResult(
+                    "complete_task", True, f"Completed task: **{task.title}**", task.id, "task"
+                ).to_dict()]
+
         # A short "what about X?" after discussing the schedule is a lookup, not
         # permission to create a new task.  In particular, do this before carrying
         # a date from the prior turn into the LLM scheduling parser: that combination
@@ -1395,6 +1481,13 @@ class TaskManager:
                     return [created.to_dict()]
 
         if re.match(r"^(yes|yeah|yep|confirm|do it|go ahead)\.?!?$", text.lower()):
+            pending_task = self._find_pending_task_request(history)
+            if pending_task:
+                actions = await self.process_user_message(
+                    f"add task: {pending_task}", db, model=model
+                )
+                if actions:
+                    return actions
             pending = self._find_pending_calendar_request(history)
             if pending:
                 created = self._create_event_from_body(pending, db)
@@ -1959,7 +2052,8 @@ Examples:
         # --- Create task ---
         create_match = None
         for pat in [
-            r"^(?:add|create|new)\s+(?:a\s+)?task\s*[:\s]\s*(.+)$",
+            r"^(?:add|create)\s+(?:a\s+)?(?:new\s+)?task\s*[:\s]\s*(.+)$",
+            r"^new\s+task\s*[:\s]\s*(.+)$",
             r"^task[:\s]+(.+)$",
             r"^remind me to (.+)$",
             r"^todo[:\s]+(.+)$",
@@ -2080,16 +2174,17 @@ Examples:
         start = datetime.combine(now.date(), datetime.min.time())
         end = start + timedelta(days=7)
 
-        if re.search(r"\btoday\b", lower):
+        # Check longer relative phrases before their shorter suffixes.
+        if re.search(r"\bday after tomorrow\b", lower):
+            start = start + timedelta(days=2)
+            end = start + timedelta(days=1)
+        elif re.search(r"\btoday\b", lower):
             end = start + timedelta(days=1)
         elif re.search(r"\btomorrow\b", lower):
             start = start + timedelta(days=1)
             end = start + timedelta(days=1)
         elif re.search(r"\byesterday\b", lower):
             start = start - timedelta(days=1)
-            end = start + timedelta(days=1)
-        elif re.search(r"\bday after tomorrow\b", lower):
-            start = start + timedelta(days=2)
             end = start + timedelta(days=1)
         elif re.search(r"\bthis week\b", lower):
             end = start + timedelta(days=7)
@@ -2099,6 +2194,16 @@ Examples:
         elif re.search(r"\bthis month\b", lower):
             last = monthrange(now.year, now.month)[1]
             end = datetime(now.year, now.month, last, 23, 59, 59)
+        else:
+            weekdays = {
+                "monday": 0, "tuesday": 1, "wednesday": 2,
+                "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6,
+            }
+            for name, weekday in weekdays.items():
+                if re.search(rf"\b{name}\b", lower):
+                    start += timedelta(days=(weekday - now.weekday()) % 7)
+                    end = start + timedelta(days=1)
+                    break
 
         return start, end
 

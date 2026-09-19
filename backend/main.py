@@ -249,14 +249,17 @@ def _is_email_query(message: str, history=None) -> bool:
 def _extract_email_search_terms(message: str) -> dict:
     """Pull out useful filters from the natural language query."""
     msg = message.lower()
-    result = {"sender": None, "subject_keywords": [], "unread_only": False, "limit": 5, "want_body": False}
+    result = {
+        "sender": None, "sender_only": False, "subject_keywords": [],
+        "unread_only": False, "limit": 5, "want_body": False,
+    }
 
     # unread intent
     if any(w in msg for w in ["unread", "new ", "haven't read", "not read"]):
         result["unread_only"] = True
 
     # Intent to read a specific email in full (summarize / reply / open / "what does it say")
-    if any(w in msg for w in ["summari", "reply", "respond", "draft", "read the", "read that",
+    if any(w in msg for w in ["explain", "summari", "reply", "respond", "draft", "read the", "read that",
                               "open the", "open that", "what does", "what's in", "whats in", "tell me about"]):
         result["want_body"] = True
         result["limit"] = 3
@@ -264,7 +267,8 @@ def _extract_email_search_terms(message: str) -> dict:
     # "from X" sender hint
     from_match = _re.search(r'\bfrom\s+([a-zA-Z0-9._%+\-@]+)', msg)
     if from_match:
-        result["sender"] = from_match.group(1).strip()
+        result["sender"] = from_match.group(1).rstrip(".,!?;:")
+        result["sender_only"] = True
 
     # "the X email/one/message" → focus term (matched against sender or subject)
     if not result["sender"]:
@@ -322,13 +326,18 @@ def _build_email_context(db: Session, message: str) -> str:
     if filters["unread_only"]:
         q = q.filter(EmailDB.is_unread == True)
     if filters["sender"]:
-        # Match the term against the sender OR the subject (covers "from leetcode"
-        # as well as "the puzzle one").
+        # An explicit "from X" must match the sender itself. Searching a message
+        # body here can return an unrelated email which merely mentions X.
         like = f"%{filters['sender']}%"
-        q = q.filter(
-            EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like) |
-            EmailDB.snippet.ilike(like) | EmailDB.body.ilike(like)
-        )
+        if filters["sender_only"]:
+            q = q.filter(EmailDB.sender.ilike(like))
+        else:
+            # "the puzzle one" is an inferred focus term, so it can still search
+            # sender, subject, preview, and body for a useful match.
+            q = q.filter(
+                EmailDB.sender.ilike(like) | EmailDB.subject.ilike(like) |
+                EmailDB.snippet.ilike(like) | EmailDB.body.ilike(like)
+            )
     if filters["subject_keywords"]:
         for kw in filters["subject_keywords"][:2]:
             variants = _email_term_variants(kw)
@@ -416,6 +425,40 @@ def _build_task_lookup_response(db: Session, message: str) -> str:
     for task in matches:
         due = f" — due {task.due_date.strftime('%Y-%m-%d')}" if task.due_date else " — no due date"
         lines.append(f"- **{task.title}** ({task.status}){due}")
+    return "\n".join(lines)
+
+
+def _is_calendar_lookup(message: str) -> bool:
+    """Whether the user is asking to view their calendar, not change it."""
+    msg = message.lower()
+    calendar_word = bool(_re.search(r"\b(events?|calendar|agenda|schedule)\b", msg))
+    lookup_language = bool(_re.search(
+        r"\b(what|which|show|list|check|any|have|when)\b", msg
+    ))
+    action_language = bool(_re.search(
+        r"\b(add|create|delete|remove|cancel|reschedule|move|update|set|book)\b", msg
+    ))
+    return calendar_word and lookup_language and not action_language
+
+
+def _build_calendar_lookup_response(db: Session, message: str) -> str:
+    """Return calendar results directly, so a read-only query cannot mutate data."""
+    start, end = task_manager.infer_date_range(message)
+    events = (
+        db.query(CalendarEventDB)
+        .filter(CalendarEventDB.start_at < end, CalendarEventDB.end_at >= start)
+        .order_by(CalendarEventDB.start_at)
+        .limit(20)
+        .all()
+    )
+    if not events:
+        return f"No calendar events found from {start.strftime('%a %b %d')} to {end.strftime('%a %b %d')}."
+
+    lines = ["Calendar events:"]
+    for event in events:
+        when = event.start_at.strftime("%a %b %d, %I:%M %p").replace(" 0", " ").lstrip("0")
+        end_time = event.end_at.strftime("%I:%M %p").lstrip("0") if event.end_at else None
+        lines.append(f"- **{event.title}** — {when}" + (f"–{end_time}" if end_time else ""))
     return "\n".join(lines)
 
 @app.get("/api/health")
@@ -518,6 +561,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     direct_email_response = ""
     direct_action_response = ""
     direct_task_response = ""
+    direct_calendar_response = ""
     actions_taken = []
     if _is_email_query(request.message, history):
         email_context_block = _build_email_context(db, request.message)
@@ -532,13 +576,15 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
 
     if not direct_email_response and _is_task_lookup(request.message):
         direct_task_response = _build_task_lookup_response(db, request.message)
+    if not direct_email_response and not direct_task_response and _is_calendar_lookup(request.message):
+        direct_calendar_response = _build_calendar_lookup_response(db, request.message)
 
-    if direct_email_response or direct_task_response:
+    if direct_email_response or direct_task_response or direct_calendar_response:
         # Simple inbox and task listings are completely local: avoid model
         # discovery and generic context gathering so the SSE response starts right away.
         model = "local-inbox"
-        intent = "email" if direct_email_response else "planning"
-        context_sources = ["emails"] if direct_email_response else ["tasks"]
+        intent = "email" if direct_email_response else ("planning" if direct_task_response else "calendar")
+        context_sources = ["emails"] if direct_email_response else (["tasks"] if direct_task_response else ["calendar"])
         messages = []
     else:
         try:
@@ -546,7 +592,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         except RuntimeError as e:
             raise HTTPException(status_code=503, detail=str(e))
 
-    if not _is_email_query(request.message, history) and not direct_task_response:
+    if not _is_email_query(request.message, history) and not direct_task_response and not direct_calendar_response:
         actions_taken = await task_manager.process_with_history(
             request.message, history, db, model=model
         )
@@ -565,7 +611,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             context_sources = ["tasks"]
         messages = []
 
-    if not direct_email_response and not direct_task_response and not direct_action_response:
+    if not direct_email_response and not direct_task_response and not direct_calendar_response and not direct_action_response:
         prepared = await chat_intelligence.prepare_chat(
             user_message=request.message,
             history=history,
@@ -585,7 +631,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     # so the LLM reads it instead of relying on the schedule/task context injected by
     # chat_intelligence. Insert right after the first system message (index 0) if one
     # exists, otherwise prepend to the front.
-    if email_context_block and not direct_email_response and not direct_task_response and not direct_action_response:
+    if email_context_block and not direct_email_response and not direct_task_response and not direct_calendar_response and not direct_action_response:
         email_sys = {
             "role": "system",
             "content": (
@@ -612,8 +658,8 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         }
         yield f"data: {json.dumps({'meta': meta})}\n\n"
 
-        if direct_email_response or direct_task_response or direct_action_response:
-            response_text = direct_email_response or direct_task_response or direct_action_response
+        if direct_email_response or direct_task_response or direct_calendar_response or direct_action_response:
+            response_text = direct_email_response or direct_task_response or direct_calendar_response or direct_action_response
             yield f"data: {json.dumps({'chunk': response_text})}\n\n"
         else:
             async for chunk in ollama_client.stream_generate(
