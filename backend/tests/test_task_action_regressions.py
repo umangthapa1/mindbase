@@ -53,7 +53,32 @@ def test_mark_it_as_complete_commits_the_task_shown_in_previous_reply():
     assert task.status == "completed"
 
 
-def test_delete_task_removes_the_record():
+def test_that_task_is_completed_commits_the_task_shown_in_previous_reply():
+    """Regression: "That task is completed" (with 'is') must actually mark the
+    task done, not fall through to the model which then falsely confirms it."""
+    db = _db()
+    task = TaskDB(title="Eat Food", status="pending")
+    db.add(task)
+    db.commit()
+    history = [{
+        "role": "assistant",
+        "content": "Pending tasks:\n- **Eat Food** (pending) — due 2026-09-28",
+    }]
+
+    actions = asyncio.run(
+        task_manager.process_with_history("That task is completed", history, db)
+    )
+
+    assert actions == [{
+        "action": "complete_task",
+        "success": True,
+        "message": "Completed task: **Eat Food**",
+        "item_id": task.id,
+        "item_type": "task",
+    }]
+    db.refresh(task)
+    assert task.status == "completed"
+
     db = _db()
     task = TaskDB(title="Temporary task", status="pending")
     db.add(task)

@@ -1430,7 +1430,9 @@ class TaskManager:
         # Resolve and commit it before invoking the model, so the reply cannot
         # claim a completion that never reached the database.
         completion_followup = re.match(
-            r"^(?:mark\s+)?(?:that|this|it)(?:\s+(?:task|one))?\s+(?:as\s+)?(?:complete|completed|done)[.!?]*$",
+            r"^(?:mark\s+)?(?:that|this|it|the)(?:\s+(?:task|one))?\s+"
+            r"(?:is\s+|as\s+|is\s+now\s+|now\s+|marked\s+|has\s+been\s+)?"
+            r"(?:complete|completed|done|finished)[.!?]*$",
             text,
             re.I,
         )

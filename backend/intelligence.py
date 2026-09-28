@@ -459,12 +459,15 @@ class ChatIntelligence:
             for a in failed:
                 system += f"\n(Action failed: {a.get('message')})"
         elif intent in ("calendar", "planning") or re.search(
-            r"\b(calendar|calender|schedule|event|meeting)\b", user_message.lower()
+            r"\b(calendar|calender|schedule|event|meeting|task|todo|complete|completed|done|finished)\b", user_message.lower()
         ):
             system += (
-                "\n\n## CRITICAL\nNo calendar/task action ran this turn. "
-                "Do NOT say anything was added to the calendar. "
-                "Ask them to retry in one message, e.g. "
+                "\n\n## CRITICAL\nNo task or calendar action ran this turn. "
+                "Do NOT claim any task was created, completed, updated, or deleted, "
+                "and do NOT say anything was added to the calendar. "
+                "If they asked to complete or change a task, tell them it did not go through "
+                "and ask them to retry in one clear message, e.g. "
+                "'mark Eat Food as done' or "
                 "'put Monaco Grand Prix on my calendar for Sunday at 6:45pm to 7:45pm'."
             )
 
