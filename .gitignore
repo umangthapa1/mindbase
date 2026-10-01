@@ -56,6 +56,7 @@ uploads/
 
 # Local tool state
 .reticle/
+__agent__/
 
 # Obsidian local state
 .obsidian/workspace.json

@@ -2413,6 +2413,18 @@ button {
   .messages-area { padding: 20px 14px 0; }
   .composer-wrap { padding: 10px 14px 14px; }
   .header { padding: 0 14px; gap: 10px; }
+
+  /* Long model/agent names must shrink rather than push export off-screen. */
+  .header-controls { min-width: 0; max-width: 70%; gap: 6px; }
+  .header-controls #modelSelector { min-width: 0; flex: 1; }
+  .header-controls .agent-badge { min-width: 0; max-width: 40%; }
+  .header-controls .agent-badge > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .header-controls .agent-clear,
+  .header-controls .export-btn { flex-shrink: 0; }
 }
 
 /* ──────────────────────────────────────────

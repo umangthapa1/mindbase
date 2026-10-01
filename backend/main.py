@@ -17,7 +17,8 @@ from typing import Optional
 from config import API_HOST, API_PORT, DEFAULT_MODEL, BASE_DIR, CORS_ORIGINS, CORS_ALLOW_CREDENTIALS, EMAIL_AUTO_SYNC, EMAIL_AUTO_SYNC_INTERVAL_SECONDS, EMAIL_AUTO_SYNC_MAX_RESULTS
 from imap_service import email_service, serialize_email, ATTACHMENTS_DIR
 from database import init_db, get_db, ConversationDB, MessageDB, SessionLocal, NoteDB, TaskDB, CalendarEventDB, EmailDB, AutomationRuleDB, AutomationRunDB, EmailAttachmentDB, AutomationArtifactDB
-from tasks_service import task_manager, serialize_task, serialize_event, _parse_date_string
+from tasks_service import task_manager, serialize_task, serialize_event, _parse_date_string, parse_task_payload, ActionResult
+from intent_routing import route_message, reply_sender, is_reply_query, TASK_DETAILS_QUESTION
 from models import (
     Conversation, ConversationCreate, ConversationUpdate, ChatRequest, ChatResponse, Message,
     ModelSwitchRequest, MemoryCreate, MemorySearch, MemoryUpdate,
@@ -150,101 +151,9 @@ app.add_middleware(
 
 # ── Email context helpers ────────────────────────────────────────────────────
 
-_EMAIL_PATTERNS = [
-    # Original patterns kept for backward compatibility
-    r'(check|show|get|read|fetch|list|look at|see|find|search|open|summari[sz]e|reply|respond|draft).{0,40}(email|gmail|mail|inbox|message)',
-    r'(email|gmail|mail|inbox|message).{0,40}(check|show|get|read|fetch|list|recent|latest|new|unread|from)',
-    r'(any|do i have|got any|have any|are there|were there).{0,30}(email|mail|message)',
-    r'(what|which).{0,30}(email|mail|message|inbox)',
-    r'(unread|unopened).{0,30}(email|mail|message)',
-    r'(email|mail|message).{0,20}(unread|unopened|new|from)',
-    r'emails?.{0,40}from',
-    r'from.{0,40}emails?',
-    r'\binbox\b',
-    r'\bgmail\b',
-
-    # ENHANCED PATTERNS for natural language understanding
-    # Phrases that start with exploratory language
-    r'(tell\s+me\s+about|describe|explain|what.?s?\s+the?\s+status\s+of|how\s+many|show\s+me\s+what.?s?\s+in|look\s+at\s+my|see\s+if\s+I\s+have|did\s+I\s+get|have\s+I\s+received|any\s+(new\s+)?|are\s+there\s+|what\s+emails\s+do\s+I\s+have|do\s+I\s+have\s+any\s+email|got\s+any\s+email|no\s+new\s+email)\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
-    r'tell\s+me\s+.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
-    r'tell\s+me\s+.*\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
-
-    # Phrases that end with exploratory language
-    r'\b(email|emails?|mail|messages?|inbox|gmail).*\b(tell\s+me\s+about|describe|explain|what.?s?\s+the?\s+status\s+of|how\s+many|show\s+me\s+what.?s?\s+in|look\s+at\s+my|see\s+if\s+I\s+have|did\s+I\s+get|have\s+I\s+received|any\s+(new\s+)?|are\s+there\s+|what\s+emails\s+do\s+I\s+have|do\s+I\s+have\s+any\s+email|got\s+any\s+email|no\s+new\s+email)\b',
-
-    # Time-based email queries (more flexible)
-    r'\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
-    r'\b(email|emails?|mail|messages?|inbox|gmail).*\b(latest|recent|today.?s?|yesterday.?s?|this\s+morning.?s?|this\s+afternoon.?s?|this\s+evening.?s?|this\s+week.?s?|unread\s+|new\s+|pending\s+|important\s+|urgent\s+)\b',
-
-    # Sender-focused queries.  Keep the email noun adjacent to "from": a bare
-    # "from 8 am to 1 pm" is a time range in a calendar request, not a sender.
-    r'\b(?:messages?|emails?|mail|inbox|gmail)\s+from\s+[a-zA-Z][a-zA-Z0-9._%+\-@]*\b',
-    r'\b(?:received|got)\s+(?:an?\s+)?(?:messages?|emails?|mail)\s+from\s+[a-zA-Z][a-zA-Z0-9._%+\-@]*\b',
-    r'\b(?:sender|who\s+is\s+(?:this\s+)?from)\s+[a-zA-Z][a-zA-Z0-9._%+\-@]*\b',
-
-    # Content/topic-focused queries
-    r'\b(about\s+|regarding\s+|concerning\s+|topic\s+|subject\s+|regarding\s+|re:)\s*.*?\b(email|emails?|mail|messages?|inbox|gmail)\b',
-    r'\b(email|emails?|mail|messages?|inbox|gmail).*\b(about\s+|regarding\s+|concerning\s+|topic\s+|subject\s+|regarding\s+|re:)\s*.*?\b',
-
-    # Ordinal-focused email queries
-    r'\bthe\s+\d+(st|nd|rd|th)\s+email\b.*\b(email|emails?|mail|messages?|inbox|gmail)\b',
-    r'\b(email|emails?|mail|messages?|inbox|gmail).*\bthe\s+\d+(st|nd|rd|th)\s+email\b',
-
-
-# Action-oriented email requests
-    r'\b(read\s+the\s+|open\s+the\s+|check\s+the\s+|look\s+at\s+the\s+|see\s+the\s+|what.?s?\s+in\s+the\s+|content\s+of\s+|meaning\s+of\s+meaning\s+of\s+|meaning\s+of\s+)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(email|message|mail)\b',
-    r'\b(email|message|mail)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(read\s+the\s+|open\s+the\s+|check\s+the\s+|look\s+at\s+the\s+|see\s+the\s+|what.?s?\s+in\s+the\s+|content\s+of\s+|meaning\s+of\s+|meaning\s+of\s+)\b',
-
-    # Summary requests
-    r'\b(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+|summarize\s+this\s+|summarize\s+the\s+)(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(email|message|mail)\b',
-    r'\b(email|message|mail)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+)?\s*(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+|summarize\s+this\s+|summarize\s+the\s+)\b',
-]
-
-# Follow-up references ("summarize the one from leetcode") that only make sense
-# when emails were just shown — matched only if recent history listed emails.
-_EMAIL_FOLLOWUP = _re.compile(
-    r'\b(summari[sz]e|summary|reply|respond|draft|forward)\b'
-    r'|\b(read|open)\s+(the|that|this|it|first|second|third|last|latest)\b'
-    # "the one", "the google one", "that email", "the leetcode message", "first one"…
-    r'|\b(the|that|this|first|second|third|fourth|last|latest)\s+(?:[a-z0-9]+\s+)?(one|email|message|mail)\b'
-    r'|\bfrom\s+[a-z0-9._%+\-@]+'
-    # Enhanced follow-up patterns
-    r'|\b(what\s+did\s+it\s+say|what\s+does\s+it\s+say|content\s+of|meaning\s+of|read\s+the\s+|open\s+the\s+|tell\s+me\s+about\s+|describe\s+|what.?s?\s+in\s+)\s+(the|that|this|it|first|second|third|last|latest|one|null)\s*(email|message|mail)\b'
-    r'|\b(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+)\s+(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+|one\s+|null\s*)\s*(email|message|mail)\b'
-    r'|\b(the\s+|that\s+|this\s+|it\s+|first\s+|second\s+|third\s+|last\s+|latest\s+|one\s+|null\s*)\s*(email|message|mail)\s*(summarize\s+|summary\s+of\s+|give\s+me\s+a\s+summary\s+of\s+|brief\s+me\s+on\s+|quick\s+overview\s+of\s+|what\s+did\s+it\s+say|what\s+does\s+it\s+say|content\s+of|meaning\s+of|read\s+the\s+|open\s+the\s+|tell\s+me\s+about\s+|describe\s+|what.?s?\s+in\s+)\b',
-    _re.I,
-)
-
-def _history_shows_emails(history) -> bool:
-    """True if the conversation is in 'email mode' — a recent USER turn asked about
-    email (deterministic, pattern-based), or an assistant turn listed emails. Used so
-    short follow-ups like 'summarize the one from leetcode' resolve to email context."""
-    if not history:
-        return False
-    for msg in reversed(history[-6:]):
-        role = msg.get("role")
-        text = msg.get("content") or ""
-        if role == "user":
-            m = text.lower()
-            if any(_re.search(p, m) for p in _EMAIL_PATTERNS):
-                return True
-        elif role == "assistant":
-            if "Subject:" in text and ("From:" in text or "Received:" in text):
-                return True
-    return False
-
 def _is_email_query(message: str, history=None) -> bool:
-    msg = message.lower()
-    if any(_re.search(p, msg) for p in _EMAIL_PATTERNS):
-        return True
-    # A short follow-up referencing emails that were just listed.
-    if _history_shows_emails(history) and _EMAIL_FOLLOWUP.search(msg):
-        return True
-    # Keep email context for natural continuations such as "or Google?" and
-    # "what about Reddit?" after an inbox search.
-    if _history_shows_emails(history) and _re.match(r"^(?:or|and|what about)\s+\S", msg.strip()):
-        return True
-    return False
+    """Compatibility helper; all tool selection uses the same explicit policy."""
+    return route_message(message, history).tool == "check_mail"
 
 def _extract_email_search_terms(message: str) -> dict:
     """Pull out useful filters from the natural language query."""
@@ -263,12 +172,23 @@ def _extract_email_search_terms(message: str) -> dict:
                               "open the", "open that", "what does", "what's in", "whats in", "tell me about"]):
         result["want_body"] = True
         result["limit"] = 3
+    if is_reply_query(msg):
+        # "Did Alice reply?" asks for existing messages, not a generated reply.
+        result["want_body"] = False
+        result["limit"] = 5
 
     # "from X" sender hint
     from_match = _re.search(r'\bfrom\s+([a-zA-Z0-9._%+\-@]+)', msg)
     if from_match:
         result["sender"] = from_match.group(1).rstrip(".,!?;:")
         result["sender_only"] = True
+
+    # Reply-status questions often omit the word 'email': "Did Alice reply?".
+    if not result["sender"]:
+        sender = reply_sender(msg)
+        if sender:
+            result["sender"] = sender
+            result["sender_only"] = True
 
     # "the X email/one/message" → focus term (matched against sender or subject)
     if not result["sender"]:
@@ -555,63 +475,74 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             history.append({"role": msg.role, "content": msg.content})
     history.append({"role": "user", "content": request.message})
 
-    # Check email intent first — if this is an email query, skip task_manager
-    # so it doesn't create a task called "Email Check" instead of fetching emails.
+    # Route once. An explicit task wrapper outranks mail words in its payload;
+    # ambiguous requests never reach an action extractor or mutate the workspace.
+    route = route_message(request.message, history[:-1])
     email_context_block = ""
-    direct_email_response = ""
-    direct_action_response = ""
-    direct_task_response = ""
-    direct_calendar_response = ""
+    direct_response = route.question
     actions_taken = []
-    if _is_email_query(request.message, history):
-        email_context_block = _build_email_context(db, request.message)
-        if email_context_block:
-            actions_taken.append({"type": "email_context", "summary": "Retrieved emails from Gmail"})
-            # Listing headers/previews does not need an LLM round-trip. Returning the
-            # locally retrieved data directly is faster and avoids competing model
-            # requests while the inbox is being checked. Reading, summarizing, and
-            # drafting still use the model below.
-            if not _extract_email_search_terms(request.message)["want_body"]:
-                direct_email_response = _format_email_listing_response(email_context_block)
+    intent = "clarification" if route.question else "general"
+    context_sources = []
+    messages = []
+    model = "local-router"
 
-    if not direct_email_response and _is_task_lookup(request.message):
-        direct_task_response = _build_task_lookup_response(db, request.message)
-    if not direct_email_response and not direct_task_response and _is_calendar_lookup(request.message):
-        direct_calendar_response = _build_calendar_lookup_response(db, request.message)
+    if route.tool == "add_task":
+        try:
+            payload = parse_task_payload(route.task_text)
+        except (ValueError, OverflowError):
+            payload = None
+            direct_response = "What valid date and time should I use for this task?"
+        if payload and len(payload["title"]) >= 2:
+            task = task_manager.create_task(db, **payload)
+            actions_taken = [ActionResult(
+                "create_task", True, task_manager._format_task_created_message(task), task.id, "task"
+            ).to_dict()]
+            direct_response = actions_taken[0]["message"]
+            intent, context_sources = "planning", ["tasks"]
+        else:
+            direct_response = direct_response or TASK_DETAILS_QUESTION
+            intent = "clarification"
+    elif route.tool == "complete_task":
+        completed = task_manager.complete_recent_task(route.query, history[:-1], db)
+        if completed and completed.success:
+            actions_taken = [completed.to_dict()]
+            direct_response = completed.message
+            intent, context_sources = "planning", ["tasks"]
+        else:
+            direct_response = completed.message if completed else "Which task should I mark as completed?"
+            intent = "clarification"
+    elif route.tool == "check_mail":
+        email_context_block = _build_email_context(db, route.query)
+        intent, context_sources = "email", ["emails"]
+        actions_taken.append({"type": "email_context", "summary": "Retrieved locally synced emails"})
+        if not _extract_email_search_terms(route.query)["want_body"]:
+            direct_response = _format_email_listing_response(email_context_block)
+    elif not direct_response and _is_task_lookup(request.message):
+        direct_response = _build_task_lookup_response(db, request.message)
+        intent, context_sources = "planning", ["tasks"]
+    elif not direct_response and _is_calendar_lookup(request.message):
+        direct_response = _build_calendar_lookup_response(db, request.message)
+        intent, context_sources = "calendar", ["calendar"]
 
-    if direct_email_response or direct_task_response or direct_calendar_response:
-        # Simple inbox and task listings are completely local: avoid model
-        # discovery and generic context gathering so the SSE response starts right away.
-        model = "local-inbox"
-        intent = "email" if direct_email_response else ("planning" if direct_task_response else "calendar")
-        context_sources = ["emails"] if direct_email_response else (["tasks"] if direct_task_response else ["calendar"])
-        messages = []
-    else:
+    # Model discovery/extraction used to precede even simple task creation. Keep
+    # those local (and usable offline), resolving the chosen model only if needed.
+    if not direct_response:
         try:
             model = await ollama_client.get_model(request.model)
         except RuntimeError as e:
             raise HTTPException(status_code=503, detail=str(e))
+        if route.tool == "schedule":
+            actions_taken = await task_manager.process_with_history(
+                route.query, history, db, model=model
+            )
+            successful_actions = [a for a in actions_taken if a.get("success")]
+            if successful_actions:
+                direct_response = "\n\n".join(a["message"] for a in successful_actions)
+                is_event = any(a.get("item_type") == "event" for a in successful_actions)
+                intent = "calendar" if is_event else "planning"
+                context_sources = ["calendar" if is_event else "tasks"]
 
-    if not _is_email_query(request.message, history) and not direct_task_response and not direct_calendar_response:
-        actions_taken = await task_manager.process_with_history(
-            request.message, history, db, model=model
-        )
-
-    # Scheduling actions have already been committed by task_manager.  Do not make
-    # a second, serial model call merely to paraphrase their confirmation: it doubles
-    # the time to first visible response for requests such as "add an event …".
-    successful_actions = [a for a in actions_taken if a.get("success")]
-    if successful_actions:
-        direct_action_response = "\n\n".join(a["message"] for a in successful_actions)
-        if any(a.get("item_type") == "event" for a in successful_actions):
-            intent = "calendar"
-            context_sources = ["calendar"]
-        else:
-            intent = "planning"
-            context_sources = ["tasks"]
-        messages = []
-
-    if not direct_email_response and not direct_task_response and not direct_calendar_response and not direct_action_response:
+    if not direct_response:
         prepared = await chat_intelligence.prepare_chat(
             user_message=request.message,
             history=history,
@@ -627,11 +558,10 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         context_sources = prepared.context_sources
     gen_temperature = request.temperature
 
-    # For email queries, prepend the Gmail context as a high-priority system message
-    # so the LLM reads it instead of relying on the schedule/task context injected by
-    # chat_intelligence. Insert right after the first system message (index 0) if one
-    # exists, otherwise prepend to the front.
-    if email_context_block and not direct_email_response and not direct_task_response and not direct_calendar_response and not direct_action_response:
+    # Summaries/drafts still use the selected model and grounded inbox context.
+    if email_context_block and not direct_response:
+        intent = "email"
+        context_sources = list(dict.fromkeys(["emails", *context_sources]))
         email_sys = {
             "role": "system",
             "content": (
@@ -653,13 +583,14 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         response_text = ""
         meta = {
             "intent": intent,
+            "tool": route.tool,
             "context": context_sources,
             "actions": actions_taken,
         }
         yield f"data: {json.dumps({'meta': meta})}\n\n"
 
-        if direct_email_response or direct_task_response or direct_calendar_response or direct_action_response:
-            response_text = direct_email_response or direct_task_response or direct_calendar_response or direct_action_response
+        if direct_response:
+            response_text = direct_response
             yield f"data: {json.dumps({'chunk': response_text})}\n\n"
         else:
             async for chunk in ollama_client.stream_generate(
@@ -676,6 +607,10 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
         )
         db.add(assistant_msg)
         conv.updated_at = datetime.utcnow()
+        # Local tool responses must not send the pseudo-model name to Ollama for
+        # auto-titling. Use a short local title, keeping the whole path model-free.
+        if model == "local-router" and PLACEHOLDER_TITLE_RE.match(conv.title or ""):
+            conv.title = " ".join(request.message.split())[:60] or "Conversation"
         db.commit()
 
         # Ordered history, loaded once and shared by auto-titling and memory extraction.
@@ -698,7 +633,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
 
         # Auto-extract memory from conversation, unless the user turned it off in
         # Settings ("Auto-extract from chat").
-        if request.auto_memory:
+        if request.auto_memory and route.tool == "chat":
             try:
                 await memory_manager.auto_extract_memory_from_chat(request.conversation_id, ordered[-6:])
             except Exception as e:

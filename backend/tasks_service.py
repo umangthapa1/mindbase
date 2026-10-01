@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from database import CalendarEventDB, TaskDB
 from ollama import ollama_client
+from intent_routing import completion_claim
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,12 @@ TIME_OF_DAY = {
     "evening": 18,
     "night": 20,
 }
+
+_RELATIVE_DELAY_RE = re.compile(
+    r"\bin\s+(?:(?:like|about|around|roughly|approximately)\s+)?"
+    r"(-?\d+(?:\.\d+)?|an?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b"
+    r"(?:\s+(?:and\s+)?(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b)?", re.I,
+)
 
 
 def format_date_reference(reference: Optional[datetime] = None) -> str:
@@ -128,11 +135,24 @@ def _parse_date_string(value: str) -> Optional[datetime]:
 
 
 def parse_natural_due(text: str, reference: Optional[datetime] = None) -> Tuple[str, Optional[datetime]]:
-    """Strip due-date phrases from text; return cleaned text and due datetime (end of day)."""
+    """Strip due phrases; minute/hour delays use exact time, dates default to end of day."""
     ref = reference or datetime.now()
     lower = text.lower()
     due: Optional[datetime] = None
     cleaned = text
+
+    # Relative reminders are offsets, not end-of-day dates. Match these before
+    # calendar words so a title like 'review evening report in 15 mins' stays exact.
+    relative = _RELATIVE_DELAY_RE.search(lower)
+    if relative:
+        amount = 1.0 if relative.group(1) in {"a", "an"} else float(relative.group(1))
+        if amount <= 0:
+            raise ValueError("Reminder delay must be positive")
+        minutes = amount * (60 if relative.group(2).startswith("h") else 1)
+        minutes += float(relative.group(3) or 0)
+        due = ref + timedelta(minutes=minutes)
+        cleaned = text[:relative.start()] + text[relative.end():]
+        return re.sub(r"\s+", " ", cleaned).strip(" -–—,.?!"), due
 
     weekday_map = {
         "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
@@ -291,6 +311,9 @@ def parse_event_timing(text: str, reference: Optional[datetime] = None) -> Tuple
         text = re.sub(duration_m.group(0), "", text, flags=re.I)
 
     title, date_hint = parse_natural_due(text, ref)
+    if date_hint and _RELATIVE_DELAY_RE.search(text):
+        # Shared relative parsing must not discard the clock for calendar callers.
+        start = date_hint
     # --- FIX: interpret "evening today", "today evening", etc ---
     lower = text.lower()
 
@@ -402,14 +425,22 @@ def _title_case(s: str) -> str:
     return s[0].upper() + s[1:]
 
 
-def parse_task_payload(raw: str) -> Dict[str, Any]:
+def parse_task_payload(raw: str, reference: Optional[datetime] = None) -> Dict[str, Any]:
     """Split user text into title, description, priority, tags, due date."""
-    text = raw.strip()
+    ref = reference or datetime.now()
+    # The action is already present: 'push code, can u remind me to do it in
+    # 15 mins'. Remove only the reminder wrapper, retaining its timing clause.
+    raw = re.sub(
+        r"\s+(?:and\s+)?(?:(?:can|could|would|will)\s+(?:you|u)\s+)?"
+        r"(?:please\s+)?remind\s+me\s+(?:to\s+(?:do\s+)?(?:it|this|that)\s+)?(?=in\b)",
+        " ", raw.strip(), flags=re.I,
+    )
+    text = raw
     priority = "medium"
     status = "pending"
     tags: List[str] = []
 
-    _, due = parse_natural_due(text)
+    _, due = parse_natural_due(text, reference=ref)
 
     if re.search(r"\b(urgent|asap|critical|high\s+priority|!important)\b", text, re.I):
         priority = "high"
@@ -495,7 +526,7 @@ def parse_task_payload(raw: str) -> Dict[str, Any]:
 
     # cleanup spacing
     text = re.sub(r"\s+", " ", text).strip(" -–—,.")
-    title, due_from_title = parse_natural_due(text)
+    title, due_from_title = parse_natural_due(text, reference=ref)
     if due_from_title:
         due = due_from_title
 
@@ -516,7 +547,7 @@ def parse_task_payload(raw: str) -> Dict[str, Any]:
         if due:
             due = due.replace(hour=_hour, minute=_minute, second=0, microsecond=0)
         else:
-            due = datetime.now().replace(hour=_hour, minute=_minute, second=0, microsecond=0)
+            due = ref.replace(hour=_hour, minute=_minute, second=0, microsecond=0)
         title = re.sub(re.escape(_time_m.group(0)), "", title, flags=re.I)
 
     title = re.sub(
@@ -531,6 +562,7 @@ def parse_task_payload(raw: str) -> Dict[str, Any]:
         remainder = raw
         for bit in (title,):
             remainder = remainder.replace(bit, "", 1)
+        remainder, _ = parse_natural_due(remainder, reference=ref)
         remainder = re.sub(
             r"\b(due|by|tomorrow|today|tags?|priority|#)\S*",
             "",
@@ -996,7 +1028,9 @@ class TaskManager:
         if tags:
             lines.append(f"- Tags: {', '.join(tags)}")
         if task.due_date:
-            lines.append(f"- Due: {task.due_date.strftime('%Y-%m-%d')}")
+            date_only = (task.due_date.hour, task.due_date.minute, task.due_date.second) == (23, 59, 59)
+            due_label = task.due_date.strftime('%Y-%m-%d' if date_only else '%Y-%m-%d %H:%M')
+            lines.append(f"- Due: {due_label}" + ("" if date_only else " (local time)"))
         return "\n".join(lines)
 
     def _try_update_task_priority(self, text: str, db: Session) -> Optional[ActionResult]:
@@ -1253,22 +1287,63 @@ class TaskManager:
     def _find_recent_task_from_history(
         self, history: List[Dict[str, str]], db: Session
     ) -> Optional[TaskDB]:
-        """Resolve pronouns such as "that" to the task just shown in chat."""
-        for msg in reversed(history):
+        """Resolve one exact recent reference, never fuzzy-match a different task.
+
+        Keep completed tasks eligible so repeating 'done' is idempotent instead
+        of skipping backwards to an older open task. Lists/duplicate titles need
+        clarification rather than an arbitrary first match.
+        """
+        for msg in reversed(history[-6:]):
             if msg.get("role") != "assistant":
                 continue
             content = msg.get("content", "")
+            if re.search(r"Deleted task:\s*\*\*", content, re.I):
+                return None
+            titles = []
             for pattern in (
-                r"(?:Created|Deleted) task:\s*\*\*(.+?)\*\*",
-                r"-\s+\*\*(.+?)\*\*\s*\((?:pending|in progress)\)",
+                r"(?:Created|Completed|Already completed) task:\s*\*\*(.+?)\*\*",
+                r"-\s+\*\*(.+?)\*\*\s*\((?:pending|in progress|in_progress|completed)\)",
                 r"Task added:\s*.*?(?:-\s*)?\*{0,2}Title:\*{0,2}\s*(.+?)(?:\n|$)",
             ):
-                match = re.search(pattern, content, re.I)
-                if match:
-                    task = self.find_task_by_title(db, match.group(1))
-                    if task:
-                        return task
+                titles.extend(re.findall(pattern, content, re.I))
+            if titles:
+                titles = {title.strip().lower() for title in titles}
+                if len(titles) != 1:
+                    return None
+                matches = db.query(TaskDB).filter(func.lower(TaskDB.title) == next(iter(titles))).limit(2).all()
+                return matches[0] if len(matches) == 1 else None
         return None
+
+    def complete_recent_task(
+        self, message: str, history: List[Dict[str, str]], db: Session
+    ) -> Optional[ActionResult]:
+        """Ground a completion acknowledgement in one task, without a model call."""
+        claim = completion_claim(message)
+        if claim is None:
+            return None
+        task = self._find_recent_task_from_history(history, db)
+        unclear = ActionResult(
+            "complete_task", False,
+            "Which task did you complete? Please use 'mark <task title> as done'.",
+        )
+        if task is None:
+            return unclear
+        if claim:
+            verb, activity = claim.split(" ", 1)
+            title_words = set(re.findall(r"[\w]+", task.title.lower()))
+            stop_words = {"the", "this", "that", "task", "and", "for", "my", "our", "your", "just", "already", "now", "successfully"}
+            words = {w for w in re.findall(r"[\w]+", activity) if len(w) >= 3 and w not in stop_words}
+            pronoun = activity.strip() in {"it", "this", "that", "the task"}
+            if (verb not in title_words and verb not in {"finish", "complete"}) or not (pronoun or words & title_words) or words & {"other", "another", "different"}:
+                return unclear
+        if task.status == "completed":
+            return ActionResult("complete_task", True, f"Already completed task: **{task.title}**", task.id, "task")
+        if task.status not in VALID_STATUSES:
+            return unclear
+        task.status = "completed"
+        task.updated_at = datetime.utcnow()
+        db.commit()
+        return ActionResult("complete_task", True, f"Completed task: **{task.title}**", task.id, "task")
 
     def _find_pending_calendar_request(
         self, history: List[Dict[str, str]]
@@ -1426,25 +1501,10 @@ class TaskManager:
         ):
             return []
 
-        # "mark that as complete" refers to the task just shown by the assistant.
-        # Resolve and commit it before invoking the model, so the reply cannot
-        # claim a completion that never reached the database.
-        completion_followup = re.match(
-            r"^(?:mark\s+)?(?:that|this|it|the)(?:\s+(?:task|one))?\s+"
-            r"(?:is\s+|as\s+|is\s+now\s+|now\s+|marked\s+|has\s+been\s+)?"
-            r"(?:complete|completed|done|finished)[.!?]*$",
-            text,
-            re.I,
-        )
-        if completion_followup:
-            task = self._find_recent_task_from_history(history, db)
-            if task:
-                task.status = "completed"
-                task.updated_at = datetime.utcnow()
-                db.commit()
-                return [ActionResult(
-                    "complete_task", True, f"Completed task: **{task.title}**", task.id, "task"
-                ).to_dict()]
+        # Acknowledgements must commit (or clarify) before model extraction.
+        completed = self.complete_recent_task(text, history, db)
+        if completed:
+            return [completed.to_dict()]
 
         # A short "what about X?" after discussing the schedule is a lookup, not
         # permission to create a new task.  In particular, do this before carrying
@@ -1495,25 +1555,6 @@ class TaskManager:
                 created = self._create_event_from_body(pending, db)
                 if created:
                     return [created.to_dict()]
-
-        bare_done = re.match(
-            r"^(?:yes[,\s]+)?(?:it['s\s]+)?(?:done|finished|completed|complete)[\.\!]*$",
-            text.strip(),
-            re.I,
-        )
-        if bare_done:
-            pending_task = self._find_pending_task_request(history)
-            if pending_task:
-                task = self.find_task_by_title(db, pending_task)
-                if task:
-                    task.status = "completed"
-                    task.updated_at = datetime.utcnow()
-                    db.commit()
-                    return [ActionResult(
-                        "complete_task", True,
-                        f"Completed task: **{task.title}**",
-                        task.id, "task",
-                    ).to_dict()]
 
         return []
 

@@ -15,6 +15,9 @@ class ChatManager {
         this.currentConversationId = null;
         this.conversations = [];
         this.isLoading = false;
+        this.isConversationLoading = false;
+        this.conversationRequestId = 0;
+        this.sendingConversationId = null;
         this.messageContextMenu = null;
         this.activeMessageElement = null;
     }
@@ -355,16 +358,39 @@ class ChatManager {
     }
 
     /* ── Select / load conversation ── */
-    async selectConversation(id) {
-        this.hideMessageContextMenu();
+    beginConversationSelection(id) {
+        const requestId = ++this.conversationRequestId;
         this.currentConversationId = id;
+        this.isConversationLoading = true;
+        this.setSendLoading(true);
+        // Never leave A's messages visible under B's selected ID while B loads.
+        this.clearMessages();
+        $('#pageTitle').textContent = 'Loading conversation…';
         this.renderConversations();
+        return requestId;
+    }
+
+    async selectConversation(id) {
+        const requestId = this.beginConversationSelection(id);
         try {
             const conv = await API.getConversation(id);
+            if (requestId !== this.conversationRequestId) return;
             this.displayConversation(conv);
             $('#pageTitle').textContent = conv.title || 'Conversation';
+            if (this.sendingConversationId === id) this.setTyping(true);
         } catch (err) {
+            if (requestId !== this.conversationRequestId) return;
             console.error('Failed to load conversation:', err);
+            this.currentConversationId = null;
+            this.clearMessages(true);
+            $('#pageTitle').textContent = 'Conversation';
+            this.renderConversations();
+            toast('Could not load conversation. Please select it again.', 'error');
+        } finally {
+            if (requestId === this.conversationRequestId) {
+                this.isConversationLoading = false;
+                this.setSendLoading(this.isLoading);
+            }
         }
     }
 
@@ -377,15 +403,28 @@ class ChatManager {
 
     /* ── Create / delete ── */
     async createConversation() {
+        const requestId = this.beginConversationSelection(null);
         try {
             const conv = await API.createConversation();
             this.conversations.unshift(conv);
+            if (requestId === this.conversationRequestId) {
+                this.currentConversationId = conv.id;
+                this.clearMessages(true);
+                $('#pageTitle').textContent = conv.title || 'Conversation';
+            }
             this.renderConversations();
-            this.currentConversationId = conv.id;
-            this.clearMessages(true);
-            $('#pageTitle').textContent = conv.title || 'Conversation';
         } catch (err) {
             console.error('Failed to create conversation:', err);
+            if (requestId === this.conversationRequestId) {
+                this.clearMessages(true);
+                $('#pageTitle').textContent = 'Conversation';
+                toast('Could not create conversation. Please try again.', 'error');
+            }
+        } finally {
+            if (requestId === this.conversationRequestId) {
+                this.isConversationLoading = false;
+                this.setSendLoading(this.isLoading);
+            }
         }
     }
 
@@ -394,7 +433,10 @@ class ChatManager {
             await API.deleteConversation(id);
             this.conversations = this.conversations.filter(c => c.id !== id);
             if (this.currentConversationId === id) {
+                ++this.conversationRequestId;
                 this.currentConversationId = null;
+                this.isConversationLoading = false;
+                this.setSendLoading(this.isLoading);
                 this.clearMessages(true);
                 $('#pageTitle').textContent = 'Conversation';
             }
@@ -603,7 +645,7 @@ class ChatManager {
     async sendMessage() {
         const input = $('#messageInput');
         const message = input.value.trim();
-        if (!message || this.isLoading) return;
+        if (!message || this.isLoading || this.isConversationLoading) return;
 
         // FIX 4: Enforce max message length
         if (message.length > MAX_MESSAGE_LENGTH) {
@@ -616,16 +658,18 @@ class ChatManager {
             return;
         }
 
+        const conversationId = this.currentConversationId;
+        const requestId = this.conversationRequestId;
+        const isCurrentView = () => this.currentConversationId === conversationId
+            && this.conversationRequestId === requestId;
+
         input.value = '';
         input.style.height = 'auto';
         this.updateCharCount(0, $('#charCounter'));
         this.isLoading = true;
+        this.sendingConversationId = conversationId;
+        // Stay neutral until backend metadata identifies the actual context.
         this.setTyping(true);
-        if (/\b(event|meeting|appointment|calendar|schedule)\b/i.test(message)) {
-            this.setTypingLabel('Creating calendar event…');
-        } else if (/\b(task|todo|remind)\b/i.test(message)) {
-            this.setTypingLabel('Updating tasks…');
-        }
         this.setSendLoading(true);
 
         // Append user message immediately
@@ -637,7 +681,7 @@ class ChatManager {
         // the backend only auto-generates a title while the stored one still looks
         // like a placeholder, so writing this truncated version to the DB would
         // permanently suppress the real LLM title.
-        const userMessageConv = this.conversations.find(c => c.id === this.currentConversationId);
+        const userMessageConv = this.conversations.find(c => c.id === conversationId);
         const awaitingTitle = !!userMessageConv && PLACEHOLDER_TITLE_RE.test(userMessageConv.title || '');
         if (awaitingTitle) {
             userMessageConv.title = message.length > 30 ? message.substring(0, 30) + '...' : message;
@@ -655,10 +699,14 @@ class ChatManager {
             const selectedModel = $('#modelSelector').value;
 
             for await (const data of API.streamMessage(
-                this.currentConversationId,
+                conversationId,
                 message,
                 selectedModel || null
             )) {
+                // Keep consuming offscreen responses so the backend can finish,
+                // but never write their chunks or status into another view.
+                if (!isCurrentView()) continue;
+
                 // Handle meta / action info
                 if (data.meta) {
                     const parts = [];
@@ -692,7 +740,7 @@ class ChatManager {
             }
 
             // Highlight code in final streamed message
-            if (streamBubble) {
+            if (streamBubble && isCurrentView()) {
                 streamBubble.querySelectorAll('pre code').forEach(block => {
                     try { hljs.highlightElement(block); } catch {}
                 });
@@ -709,26 +757,37 @@ class ChatManager {
             console.error('Failed to send message:', err);
             // Keep any text already received instead of adding a misleading second
             // assistant bubble. The browser console keeps the diagnostic detail.
-            if (streamBubble && assistantContent) {
-                const notice = document.createElement('p');
-                notice.style.cssText = 'font-size:11px;color:var(--text-tertiary);margin-top:6px;';
-                notice.textContent = 'Response interrupted before completion.';
-                streamBubble.appendChild(notice);
-                toast('The response was interrupted. Your partial reply was kept.', 'error');
-            } else {
-                this.appendMessage('assistant', 'Something went wrong. Please try again.');
+            if (isCurrentView()) {
+                if (streamBubble && assistantContent) {
+                    const notice = document.createElement('p');
+                    notice.style.cssText = 'font-size:11px;color:var(--text-tertiary);margin-top:6px;';
+                    notice.textContent = 'Response interrupted before completion.';
+                    streamBubble.appendChild(notice);
+                    toast('The response was interrupted. Your partial reply was kept.', 'error');
+                } else {
+                    this.appendMessage('assistant', 'Something went wrong. Please try again.');
+                }
             }
         } finally {
             this.isLoading = false;
-            this.setTyping(false);
-            this.setSendLoading(false);
-            input.focus();
+            this.sendingConversationId = null;
+            if (isCurrentView()) {
+                this.setTyping(false);
+                input.focus();
+            }
+            this.setSendLoading(this.isConversationLoading);
+        }
+
+        // If the user left and returned mid-stream, their history fetch may have
+        // preceded the saved answer. Refresh that view after the response ends.
+        if (!isCurrentView() && this.currentConversationId === conversationId) {
+            await this.selectConversation(conversationId);
         }
 
         // The backend generates the real title in a background task once the stream
         // finishes, so poll briefly for it and swap out the provisional one.
         if (awaitingTitle) {
-            await this.pollForGeneratedTitle(this.currentConversationId);
+            await this.pollForGeneratedTitle(conversationId);
         }
     }
 

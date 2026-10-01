@@ -208,8 +208,13 @@ Run the backend test suite from the repository root:
 ```bash
 source venv/bin/activate
 pip install -r backend/requirements-dev.txt
-pytest -q backend/tests/
+python backend/tests/run_isolated.py
 ```
+
+This runs pytest in a disposable source copy with network access blocked and
+embeddings stubbed. The legacy direct suite includes destructive memory tests;
+do not run it against your real workspace. Frontend checks are available with
+`node --test frontend/tests/*.test.cjs` (the layout check uses installed Firefox).
 
 Current coverage includes natural-language due dates, memory upserts, email query routing, chat context assembly, and email automations. The standalone scripts `backend/test.py` and `backend/test_scheduling.py` are manual checks rather than pytest tests.
 

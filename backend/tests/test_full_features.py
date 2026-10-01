@@ -1,14 +1,4 @@
-"""Comprehensive test suite covering all features of Mindbase:
-- Tasks (CRUD, Natural Language Creation, Priority Change, Mark Complete, Status Change, Delete)
-- Notes (CRUD, Tagging)
-- Calendar (CRUD, Date-range queries, Natural Language Scheduling)
-- Memory (CRUD, List, Type Filtering, Clear with confirmation token)
-- Documents (Upload, List, Delete)
-- Chat & Intelligence (Conversations CRUD, Context Gathering)
-- Email & Automations (Inbox, Unread Count, Mark Read, Automation Rules CRUD, Execution)
-- System & Settings (Health check, Model listing, Workspace reset protection)
-- Frontend Asset Integrity (All HTML, CSS, JS presence)
-"""
+
 import os
 import sys
 from datetime import datetime, timedelta
