@@ -7,24 +7,27 @@
   <title>Email — Mindbase</title>
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../css/globals.css?v=20260824">
-  <link rel="stylesheet" href="page-theme.css?v=20260728">
+  <link rel="stylesheet" href="../css/globals.css?v=20261001ui">
+  <link rel="stylesheet" href="page-theme.css?v=20261001ui">
   <style>
     .email-layout {
       display: grid;
-      grid-template-columns: 360px 1fr;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
       gap: 16px;
       align-items: start;
     }
 
     @media (max-width: 860px) {
-      .email-layout { grid-template-columns: 1fr; }
+      .email-layout { grid-template-columns: minmax(0, 1fr); }
       .email-detail-card { display: none; }
       .email-detail-card.is-active { display: block; }
       .email-list-card.is-hidden { display: none; }
     }
 
-    .email-list-card { padding: 0; overflow: hidden; }
+    .email-list-card { padding: 0; overflow: hidden; min-width: 0; }
+    .email-detail-card { min-width: 0; }
+    .email-detail-card > * { min-width: 0; }
+    .email-detail-body { overflow-wrap: anywhere; }
 
     .email-row {
       display: flex;
@@ -225,8 +228,9 @@
     }
 
     .mailbox-tab {
-      padding: 6px 14px;
-      border-radius: 999px;
+      min-height: 40px;
+      padding: 8px 14px;
+      border-radius: 8px;
       font-size: 12px;
       font-weight: 500;
       border: 1px solid var(--border-subtle);
@@ -262,11 +266,11 @@
   </style>
 </head>
 <body>
-<script src="../js/dock.js?v=20260728"></script>
+<script src="../js/dock.js?v=20261001ui"></script>
 <div class="page-root">
 
   <header class="page-header">
-    <span class="page-title">Email</span>
+    <div class="page-heading"><h1 class="page-title">Email</h1><p class="page-subtitle">Review your inbox and turn messages into useful work.</p></div>
     <a href="/" class="back-link">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
       Chat

@@ -8,63 +8,79 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../css/globals.css?v=20260824">
-  <link rel="stylesheet" href="page-theme.css?v=20260728">
+  <link rel="stylesheet" href="../css/globals.css?v=20261001ui">
+  <link rel="stylesheet" href="page-theme.css?v=20261001ui">
   <style>
-    html,body { overflow:hidden; height:100%; }
-    .notes-shell { display:flex; height:100vh; }
+    html, body { overflow:hidden; height:100%; }
+    .notes-page { height:100vh; height:100dvh; min-height:0; }
+    .notes-shell { display:flex; flex:1; min-height:0; min-width:0; }
 
-    /* Sidebar */
-    .notes-sidebar { width:220px; flex-shrink:0; background:var(--glass-bg); border-right:1px solid var(--glass-border); display:flex; flex-direction:column; }
-    .notes-sidebar-header { padding:14px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-    .notes-sidebar-title { font-size:10.5px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-tertiary); }
-    .notes-list { flex:1; overflow-y:auto; padding:6px; }
-    .note-item { padding:8px 10px; border-radius:7px; cursor:pointer; color:var(--text-secondary); font-size:12.5px; font-weight:300; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:background 140ms ease, color 140ms ease; }
+    .notes-sidebar { width:240px; min-width:0; flex-shrink:0; background:var(--bg-surface); border-right:1px solid var(--border-subtle); display:flex; flex-direction:column; }
+    .notes-sidebar-header { padding:16px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; }
+    .notes-sidebar-title { font-size:13px; font-weight:600; color:var(--text-secondary); }
+    .notes-list { flex:1; min-height:0; overflow-y:auto; padding:8px; }
+    .note-item { padding:10px 12px; min-height:40px; border-radius:8px; cursor:pointer; color:var(--text-secondary); font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:background 140ms ease, color 140ms ease; }
     .note-item:hover { background:var(--bg-hover); color:var(--text-primary); }
-    .note-item.active { background:var(--bg-active); color:var(--text-primary); }
-    .notes-sidebar-footer { padding:12px 14px; border-top:1px solid var(--border-subtle); flex-shrink:0; }
+    .note-item.active { background:var(--bg-active); color:var(--text-primary); box-shadow:inset 3px 0 var(--accent); }
+    .notes-sidebar-footer { padding:16px; border-top:1px solid var(--border-subtle); flex-shrink:0; }
+    .has-app-dock .notes-sidebar-footer { display:none; }
 
-    /* Editor */
-    .notes-editor { flex:1; display:flex; flex-direction:column; min-width:0; }
-    .notes-editor-header { height:52px; flex-shrink:0; background:var(--glass-bg); border-bottom:1px solid var(--glass-border); padding:0 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .notes-editor-header input { flex:1; background:transparent; border:none; outline:none; color:var(--text-primary); font-size:14px; font-family:var(--font); font-weight:500; }
-    .format-toolbar { height:40px; flex-shrink:0; background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); padding:0 16px; display:flex; align-items:center; gap:3px; overflow-x:auto; }
-    .fmt-btn { padding:4px 8px; border-radius:5px; border:none; background:transparent; color:var(--text-secondary); font-family:var(--font); font-size:12px; cursor:pointer; transition:background 120ms ease, color 120ms ease; white-space:nowrap; }
+    .notes-editor { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; }
+    .notes-editor-header { min-height:64px; flex-shrink:0; background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); padding:12px 16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+    .notes-editor-header input { flex:1 1 180px; min-width:0; font-size:16px; font-weight:500; }
+    .notes-editor-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; min-width:0; max-width:100%; }
+    #saveStatus { font-size:12px; color:var(--text-secondary); min-width:48px; text-align:right; }
+    .notes-editor-actions .btn { padding:8px 12px; font-size:13px; }
+    .format-toolbar { min-height:48px; flex-shrink:0; background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); padding:4px 16px; display:flex; align-items:center; gap:4px; overflow-x:auto; }
+    .fmt-btn { min-height:36px; min-width:36px; padding:6px 8px; flex-shrink:0; border-radius:8px; border:none; background:transparent; color:var(--text-secondary); font:400 13px var(--font); cursor:pointer; white-space:nowrap; }
     .fmt-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
-    #noteContent { flex:1; background:var(--bg-void); color:var(--text-primary); border:none; outline:none; resize:none; padding:24px 28px; font-family:var(--mono); font-size:13px; font-weight:300; line-height:1.7; }
-    .notes-empty { flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-tertiary); font-size:13px; font-weight:300; }
+    #noteContent { flex:1; min-height:160px; background:var(--bg-void); color:var(--text-primary); border:0; border-radius:0; resize:none; padding:24px; font:400 14px/1.8 var(--mono); }
+    #noteContent:focus-visible { outline-offset:-3px; }
+    .notes-empty { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; color:var(--text-secondary); font-size:14px; }
 
-    /* Preview */
-    .preview-pane { width:360px; flex-shrink:0; background:var(--bg-surface); border-left:1px solid var(--border-subtle); overflow-y:auto; padding:24px; }
-    .preview-label { font-size:10.5px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-tertiary); margin-bottom:16px; }
-    .preview-content { font-size:13px; font-weight:300; color:var(--text-secondary); line-height:1.7; }
-    .preview-content h1,.preview-content h2,.preview-content h3 { font-weight:500; color:var(--text-primary); margin:14px 0 6px; }
-    .preview-content p { margin:6px 0; }
-    .preview-content code { font-family:var(--mono); font-size:12px; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:3px; padding:1px 5px; }
-    .preview-content pre { background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:7px; padding:12px; overflow-x:auto; margin:10px 0; }
-    .preview-content ul,.preview-content ol { padding-left:18px; margin:6px 0; }
-    .preview-content blockquote { border-left:2px solid var(--border-mid); padding-left:12px; color:var(--text-tertiary); margin:8px 0; }
+    .preview-pane { width:clamp(260px, 28vw, 360px); min-width:0; flex-shrink:0; background:var(--bg-surface); border-left:1px solid var(--border-subtle); overflow-y:auto; padding:24px; }
+    .preview-label { font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:16px; }
+    .preview-content { font-size:14px; color:var(--text-secondary); line-height:1.7; overflow-wrap:anywhere; }
+    .preview-content h1,.preview-content h2,.preview-content h3 { font-weight:600; color:var(--text-primary); margin:16px 0 8px; }
+    .preview-content p { margin:8px 0; }
+    .preview-content pre { background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:8px; padding:12px; overflow-x:auto; margin:12px 0; }
+    .preview-content ul,.preview-content ol { padding-left:20px; margin:8px 0; }
+    .preview-content blockquote { border-left:2px solid var(--border-mid); padding-left:12px; color:var(--text-secondary); margin:8px 0; }
+    .preview-content img { max-width:100%; }
 
-    /* ── Mobile: stack the 3-pane shell vertically ── */
-    @media (max-width: 768px) {
-      .notes-shell { flex-direction: column; }
-      .notes-sidebar { width: 100%; max-height: 36vh; border-right: none; border-bottom: 1px solid var(--glass-border); }
-      .notes-editor { flex: 1; min-height: 0; }
-      .notes-editor-header { padding: 0 14px; }
-      #noteContent { padding: 18px 16px; }
-      .preview-pane { width: 100%; border-left: none; border-top: 1px solid var(--border-subtle); max-height: 45vh; }
+    /* Keep a useful editor width before a third pane can squeeze it. */
+    @media (max-width:1100px) {
+      .notes-shell { display:grid; grid-template-columns:220px minmax(0,1fr); grid-template-rows:minmax(0,1fr) auto; }
+      .notes-sidebar { width:auto; grid-column:1; grid-row:1 / 3; }
+      .notes-editor { grid-column:2; grid-row:1; }
+      .preview-pane { grid-column:2; width:auto; max-height:30vh; border-left:0; border-top:1px solid var(--border-subtle); padding:16px; }
+    }
+    @media (max-width:760px) {
+      .notes-shell { display:flex; flex-direction:column; overflow-y:auto; }
+      .notes-sidebar { width:100%; max-height:176px; border-right:0; border-bottom:1px solid var(--border-subtle); }
+      .notes-sidebar-header { padding:8px 16px; }
+      .notes-list { min-height:56px; }
+      .notes-editor { flex:1 0 360px; }
+      .notes-editor-actions { flex:1; }
+      .notes-editor-header input { flex-basis:100%; }
+      #noteContent { padding:16px; }
+      .preview-pane { width:100%; max-height:40vh; min-height:160px; }
     }
   </style>
 </head>
 <body>
-<script src="../js/dock.js?v=20260728"></script>
+<script src="../js/dock.js?v=20261001ui"></script>
+<div class="page-root notes-page">
+  <header class="page-header">
+    <div class="page-heading"><h1 class="page-title">Notes</h1><p class="page-subtitle">Capture ideas and keep your writing in one place.</p></div>
+  </header>
 <div class="notes-shell">
 
   <!-- Sidebar -->
   <div class="notes-sidebar">
     <div class="notes-sidebar-header">
-      <span class="notes-sidebar-title">Notes</span>
-      <button class="btn btn-ghost" id="newNoteBtn" style="padding:3px 8px;font-size:16px;line-height:1">+</button>
+      <span class="notes-sidebar-title">Your notes</span>
+      <button class="btn btn-ghost" id="newNoteBtn">New note</button>
     </div>
     <div class="notes-list" id="notesList"><div class="conv-empty" style="padding:10px">No notes yet</div></div>
     <div class="notes-sidebar-footer">
@@ -79,11 +95,11 @@
   <div class="notes-editor">
 
     <div class="notes-editor-header" id="editorHeader" style="display:none">
-      <input id="noteTitle" type="text" placeholder="Untitled">
-      <div style="display:flex;gap:8px;align-items:center">
-        <span id="saveStatus" aria-live="polite" style="font-size:11px;color:var(--text-tertiary);min-width:48px;text-align:right"></span>
-        <button class="btn btn-ghost" id="togglePreviewBtn" style="font-size:12px;padding:5px 10px">Preview</button>
-        <button class="btn btn-danger" id="deleteNoteBtn" style="font-size:12px;padding:5px 10px">Delete</button>
+      <input id="noteTitle" type="text" placeholder="Untitled" aria-label="Note title">
+      <div class="notes-editor-actions">
+        <span id="saveStatus" aria-live="polite"></span>
+        <button class="btn btn-ghost" id="togglePreviewBtn">Preview</button>
+        <button class="btn btn-danger" id="deleteNoteBtn">Delete</button>
       </div>
     </div>
 
@@ -99,7 +115,7 @@
     </div>
 
     <div class="notes-empty" id="emptyState">Create a new note to get started</div>
-    <textarea id="noteContent" style="display:none"></textarea>
+    <textarea id="noteContent" aria-label="Note content" style="display:none"></textarea>
   </div>
 
   <!-- Preview -->
@@ -108,6 +124,7 @@
     <div class="preview-content" id="previewContent"></div>
   </div>
 
+</div>
 </div>
 
 <script src="../js/toast.js"></script>

@@ -7,12 +7,13 @@
   <title>Settings — Mindbase</title>
 <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../css/globals.css?v=20260824">
-  <link rel="stylesheet" href="page-theme.css?v=20260728">
+  <link rel="stylesheet" href="../css/globals.css?v=20261001ui">
+  <link rel="stylesheet" href="page-theme.css?v=20261001ui">
   <style>
-    .setting-row { display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--border-subtle); gap:12px; }
+    .setting-row { display:flex; align-items:center; justify-content:space-between; padding:16px 0; border-bottom:1px solid var(--border-subtle); gap:16px; }
+    .setting-row > * { min-width:0; }
     .setting-row:last-child { border-bottom:none; }
-    .setting-label { font-size:13px; font-weight:300; color:var(--text-secondary); }
+    .setting-label { font-size:14px; color:var(--text-secondary); }
     .setting-desc { font-size:11px; color:var(--text-tertiary); margin-top:2px; }
     input[type="range"] { -webkit-appearance:none; height:3px; background:var(--border-mid); border-radius:99px; outline:none; cursor:pointer; flex:1; }
     input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--accent); border:2px solid var(--bg-void); box-shadow:0 0 0 1px var(--accent-border), 0 2px 6px var(--accent-soft); cursor:pointer; transition:transform 120ms var(--ease); }
@@ -39,11 +40,8 @@
       padding:0;
       transition:transform 120ms var(--ease), box-shadow 120ms var(--ease), border-color 120ms var(--ease);
     }
-    .accent-swatch:hover { transform:scale(1.1); }
-    .accent-swatch.active {
-      box-shadow:0 0 0 2px var(--bg-void), 0 0 0 4px var(--accent-ring);
-      transform:scale(1.08);
-    }
+    .accent-swatch:hover { border-color:var(--accent); }
+    .accent-swatch.active { box-shadow:0 0 0 2px var(--bg-void), 0 0 0 4px var(--accent-ring); }
     .accent-swatch.active::after {
       content:'✓';
       position:absolute;
@@ -95,17 +93,20 @@
       border-color: var(--border-strong);
       color: var(--text-primary);
     }
-    @media (max-width:600px) {
+    @media (max-width:760px) {
+      .setting-row { align-items:flex-start; flex-direction:column; gap:8px; }
+      .setting-row > select, .setting-row > input[type="number"] { width:100% !important; min-width:0 !important; }
+      .setting-row > div[style*="max-width"] { width:100%; max-width:none !important; margin-left:0 !important; }
       .accent-grid { grid-template-columns:repeat(5, 1fr); }
     }
   </style>
 </head>
 <body>
-<script src="../js/dock.js?v=20260728"></script>
+<script src="../js/dock.js?v=20261001ui"></script>
 <div class="page-root">
 
   <header class="page-header">
-    <span class="page-title">Settings</span>
+    <div class="page-heading"><h1 class="page-title">Settings</h1><p class="page-subtitle">Tune your workspace, appearance, and local data preferences.</p></div>
     <a href="/" class="back-link">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
       Chat

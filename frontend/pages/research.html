@@ -9,18 +9,18 @@
   <script src="../js/accent.js?v=20260802"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-  <link rel="stylesheet" href="../css/globals.css?v=20260824">
-  <link rel="stylesheet" href="page-theme.css?v=20260728">
+  <link rel="stylesheet" href="../css/globals.css?v=20261001ui">
+  <link rel="stylesheet" href="page-theme.css?v=20261001ui">
   <style>
-    .step-card { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:10px; box-shadow:0 6px 18px -12px rgba(0,0,0,0.6); }
+    .step-card { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:16px; margin-bottom:10px; overflow-wrap:anywhere; }
     .step-card-title { font-size:13px; font-weight:500; color:var(--text-primary); margin-bottom:6px; }
     .progress-bar { height:3px; background:var(--border-subtle); border-radius:99px; overflow:hidden; margin-bottom:12px; }
-    .progress-fill { height:100%; background:linear-gradient(90deg, var(--accent), var(--accent-soft)); border-radius:99px; transition:width 400ms ease; width:0; box-shadow:0 0 8px var(--accent-soft); }
+    .progress-fill { height:100%; background:var(--accent); border-radius:99px; transition:width 400ms ease; width:0; }
     /* Quick-start suggestion chips */
     .suggest-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
-    .suggest-chip { font-size:12px; font-weight:300; color:var(--text-secondary); background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:999px; padding:6px 13px; cursor:pointer; transition:border-color 150ms ease, color 150ms ease, background 150ms ease, transform 120ms ease; }
+    .suggest-chip { min-height:40px; font-size:13px; color:var(--text-secondary); background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:8px; padding:8px 13px; cursor:pointer; transition:border-color 150ms ease, color 150ms ease, background 150ms ease; }
     .suggest-chip:hover { border-color:var(--accent-border); color:var(--text-primary); background:var(--accent-soft); }
-    .suggest-chip:active { transform:scale(0.96); }
+    .suggest-chip:active { background:var(--bg-active); }
     .suggest-label { font-size:10.5px; font-weight:500; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-tertiary); margin:18px 0 10px; }
     .report-content { font-size:13.5px; font-weight:300; color:var(--text-secondary); line-height:1.75; }
     .report-content h1,.report-content h2,.report-content h3 { font-weight:500; color:var(--text-primary); margin:16px 0 6px; }
@@ -35,11 +35,11 @@
   </style>
 </head>
 <body>
-<script src="../js/dock.js?v=20260728"></script>
+<script src="../js/dock.js?v=20261001ui"></script>
 <div class="page-root">
 
   <header class="page-header">
-    <span class="page-title">Research</span>
+    <div class="page-heading"><h1 class="page-title">Research</h1><p class="page-subtitle">Turn a question into a focused, cited report.</p></div>
     <a href="/" class="back-link">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
       Chat

@@ -7,14 +7,17 @@
   <title>Agents — Mindbase</title>
   <script src="../js/theme.js?v=20260822"></script>
   <script src="../js/accent.js?v=20260802"></script>
-  <link rel="stylesheet" href="../css/globals.css?v=20260824">
-  <link rel="stylesheet" href="page-theme.css?v=20260728">
+  <link rel="stylesheet" href="../css/globals.css?v=20261001ui">
+  <link rel="stylesheet" href="page-theme.css?v=20261001ui">
   <style>
     .agent-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: 10px;
-      padding: 20px;
+      padding: 24px;
+      min-width: 0;
+      height: 100%;
+      overflow-wrap: anywhere;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -33,16 +36,17 @@
       color: var(--text-primary);
     }
     .agent-icon svg { width: 18px; height: 18px; }
-    .agent-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-    .agent-desc { font-size: 12px; font-weight: 300; color: var(--text-secondary); line-height: 1.5; flex:1; }
+    .agent-name { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+    .agent-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; flex:1; }
+    @media (max-width:760px) { .agent-card { padding:16px; } }
   </style>
 </head>
 <body>
-<script src="../js/dock.js?v=20260728"></script>
+<script src="../js/dock.js?v=20261001ui"></script>
 <div class="page-root">
 
   <header class="page-header">
-    <span class="page-title">AI Agents</span>
+    <div class="page-heading"><h1 class="page-title">AI agents</h1><p class="page-subtitle">Choose a specialist or create an assistant for your workflow.</p></div>
     <a href="/" class="back-link">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 2 3 6 7 10"/><line x1="3" y1="6" x2="10" y2="6"/></svg>
       Chat
@@ -55,13 +59,13 @@
     <div class="card" style="margin-bottom:32px">
       <div class="card-title">New agent</div>
       <div style="display:flex;flex-direction:column;gap:12px">
-        <div><label class="field-label">Name</label><input id="agentName" type="text" placeholder="Agent name…"></div>
-        <div><label class="field-label">System prompt</label><textarea id="agentPrompt" placeholder="You are…" style="height:88px"></textarea></div>
+        <div><label class="field-label" for="agentName">Name</label><input id="agentName" type="text" placeholder="Agent name…"></div>
+        <div><label class="field-label" for="agentPrompt">System prompt</label><textarea id="agentPrompt" placeholder="You are…" style="height:88px"></textarea></div>
         <div class="grid-2">
-          <div><label class="field-label">Model</label>
+          <div><label class="field-label" for="agentModel">Model</label>
             <select id="agentModel"><option value="mistral">Mistral</option><option value="llama2">Llama 2</option><option value="neural-chat">Neural Chat</option></select>
           </div>
-          <div><label class="field-label">Type</label>
+          <div><label class="field-label" for="agentType">Type</label>
             <select id="agentType"><option value="general">General</option><option value="coding">Coding</option><option value="writing">Writing</option><option value="analysis">Analysis</option><option value="creative">Creative</option></select>
           </div>
         </div>
