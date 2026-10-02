@@ -58,6 +58,21 @@ uploads/
 .reticle/
 __agent__/
 
+# Editor AI skills (personal tooling, not part of the app)
+.cursor/
+
+# Logseq personal notes
+logseq/
+journals/
+pages/
+
+# Stray test/scratch files
+simple_test.html
+run_all_tests.py
+
+# Pytest cache
+.pytest_cache/
+
 # Obsidian local state
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json

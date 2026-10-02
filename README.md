@@ -2,6 +2,12 @@
 
 ### A local-first AI workspace for thinking, planning, and getting things done.
 
+[![ollama](https://img.shields.io/badge/topic-ollama-black?style=flat-square)](https://github.com/topics/ollama)
+[![fastapi](https://img.shields.io/badge/topic-fastapi-009688?style=flat-square)](https://github.com/topics/fastapi)
+[![chromadb](https://img.shields.io/badge/topic-chromadb-6C4AB6?style=flat-square)](https://github.com/topics/chromadb)
+[![local-first](https://img.shields.io/badge/topic-local--first-2196F3?style=flat-square)](https://github.com/topics/local-first)
+[![rag](https://img.shields.io/badge/topic-rag-FF6F00?style=flat-square)](https://github.com/topics/rag)
+
 Mindbase brings chat, memory, notes, documents, email, tasks, calendar events, and offline research into one private workspace. It runs on your machine using [Ollama](https://ollama.com/), so your workspace data stays local and the core AI features do not require cloud API keys.
 
 > **Status:** Personal project in active development. The application is usable, but interfaces and APIs may evolve.
