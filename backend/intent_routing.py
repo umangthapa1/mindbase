@@ -7,14 +7,18 @@ vs. task commands ask one question before either tool runs.
 from dataclasses import dataclass
 import re
 from typing import Literal
+from workspace_planner import is_reminder_request, reminder_followup
+from workflow_planner import is_workflow_request, workflow_followup
 
 TOOL_DESCRIPTIONS = {
-    "add_task": "Create a to-do/reminder for a requested future action; do NOT use for questions about existing mail or inbox contents.",
+    "add_task": "Create an explicitly requested to-do; do NOT use for timer/reminder requests or questions about existing mail.",
+    "reminder": "Create a validated relative timer/reminder; clarify unsupported timing and never substitute a task.",
+    "workflow": "Validate and execute an explicit multi-step task/reminder workflow; never run only part of an unclear request.",
     "complete_task": "Complete the single task just discussed; do NOT use for negations, future plans, or ambiguous task references.",
     "check_mail": "Look up existing emails, messages or replies in the synced inbox; do NOT use when the user wants a task reminding them to handle mail.",
 }
 ROUTING_EXAMPLES = (
-    ("Remind me to check my email tomorrow", "add_task"),
+    ("Remind me to check my email in 30 minutes", "reminder"),
     ("Add reply to Alice's email to my tasks", "add_task"),
     ("I need to email Alice", "add_task"),
     ("Any new mail?", "check_mail"),
@@ -27,7 +31,7 @@ TASK_DETAILS_QUESTION = "What would you like me to add as a task?"
 
 @dataclass(frozen=True)
 class ToolRoute:
-    tool: Literal["add_task", "complete_task", "check_mail", "schedule", "chat", "clarify"]
+    tool: Literal["add_task", "complete_task", "reminder", "workflow", "check_mail", "schedule", "chat", "clarify"]
     query: str
     task_text: str = ""
     question: str = ""
@@ -39,7 +43,7 @@ _COMPLETED_VERBS = {
     "pushed": "push", "uploaded": "upload", "sent": "send", "emailed": "email",
     "replied": "reply", "called": "call", "paid": "pay", "submitted": "submit",
     "finished": "finish", "completed": "complete", "fixed": "fix", "reviewed": "review",
-    "bought": "buy", "wrote": "write", "booked": "book", "cleaned": "clean",
+    "bought": "buy", "wrote": "write", "booked": "book", "cleaned": "clean", "checked": "check",
 }
 _UNCLEAR_CHOICE = re.compile(r"(?:yes|yeah|sure|ok(?:ay)?|do it|go ahead|either|maybe|not sure)[.!?]*", re.I)
 _MAIL_WORD = re.compile(r"\b(emails?|e-mails?|mail|inbox|gmail|messages?|replies|reply)\b", re.I)
@@ -136,6 +140,19 @@ def route_message(message: str, history=None) -> ToolRoute:
     if re.match(r"^(?:don't|do not|never|no thanks|never mind|nevermind|forget it)\b", lower) or re.fullmatch(r"(?:no|cancel)[.!?]*", lower):
         return ToolRoute("chat", message)
 
+    if is_workflow_request(text):
+        return ToolRoute("workflow", text)
+    workflow_answer = workflow_followup(text, history)
+    if workflow_answer:
+        query, question = workflow_answer
+        return ToolRoute("clarify", message, question=question) if question else ToolRoute("workflow", query)
+    if is_reminder_request(text):
+        return ToolRoute("reminder", text)
+    followup = reminder_followup(text, history)
+    if followup:
+        query, question = followup
+        return ToolRoute("clarify", message, question=question) if question else ToolRoute("reminder", query)
+
     # Resolve the answer to our own question without losing the original request.
     if history and history[-1].get("role") == "assistant":
         question = history[-1].get("content", "").strip()
@@ -178,7 +195,7 @@ def route_message(message: str, history=None) -> ToolRoute:
     # Complete acknowledgements locally, including tasks whose titles mention
     # email. A past-tense activity needs task context; a bare 'done' can ask which.
     claim = completion_claim(text)
-    task_context = any(m.get("role") == "assistant" and re.search(r"\btasks?\b", m.get("content", ""), re.I) for m in history[-6:])
+    task_context = any(m.get("role") == "assistant" and re.search(r"\b(?:tasks?|reminders?|workflows?)\b", m.get("content", ""), re.I) for m in history[-6:])
     if claim is not None and (claim == "" or task_context):
         return ToolRoute("complete_task", text)
     # Do not feed 'yep, not done' or 'yep, I will ...' into the action model.

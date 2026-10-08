@@ -79,7 +79,6 @@ def send(client, message, conversation_id=None):
 
 
 @pytest.mark.parametrize("message", [
-    "Remind me to check my email tomorrow",
     "Add task: reply to Alice's email",
     "I need to email Alice",
     "Note to check my inbox tomorrow",
@@ -141,7 +140,7 @@ def test_clarification_answer_resumes_the_mail_lookup(chat_client):
 def test_explicit_task_overrides_recent_inbox_context(chat_client):
     client, db = chat_client
     conv_id, _, _ = send(client, "Any new mail?")
-    _, meta, _ = send(client, "Remind me to reply tomorrow", conv_id)
+    _, meta, _ = send(client, "Add task: reply tomorrow", conv_id)
     assert meta["tool"] == "add_task"
     assert db.query(TaskDB).count() == 1
 
@@ -439,14 +438,17 @@ def test_invalid_reminder_delay_requests_clarification_without_saving(chat_clien
     assert db.query(TaskDB).count() == 0
 
 
-def test_informal_can_u_reminder_stays_on_the_local_task_path(chat_client):
-    from datetime import datetime, timedelta
+def test_informal_can_u_reminder_stays_on_the_local_reminder_path(chat_client):
+    from datetime import timedelta
+    from database import ReminderDB
+    from workspace_runtime import utcnow
     client, db = chat_client
-    before = datetime.now()
+    before = utcnow()
     _, meta, reply = send(client, "can u remind me to push code in like 15 mins")
-    after = datetime.now()
-    task = db.query(TaskDB).one()
-    assert task.title == "Push code"
-    assert before + timedelta(minutes=15) <= task.due_date <= after + timedelta(minutes=15)
-    assert meta["tool"] == "add_task"
-    assert "local time" in reply
+    after = utcnow()
+    reminder = db.query(ReminderDB).one()
+    assert reminder.label == "Push code"
+    assert before + timedelta(minutes=15) <= reminder.due_at <= after + timedelta(minutes=15)
+    assert db.query(TaskDB).count() == 0
+    assert meta["tool"] == "reminder"
+    assert "Created reminder" in reply

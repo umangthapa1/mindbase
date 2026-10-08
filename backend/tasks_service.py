@@ -668,6 +668,7 @@ class TaskManager:
         status: str = "pending",
         due_date: Optional[datetime] = None,
         tags: Optional[List[str]] = None,
+        commit: bool = True,
     ) -> TaskDB:
 
         task = TaskDB(
@@ -683,7 +684,10 @@ class TaskManager:
         db.add(task)
 
         # 2. Commit to database
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
 
         # 3. Refresh to load DB-generated fields (id, timestamps, etc.)
         db.refresh(task)
@@ -708,6 +712,7 @@ class TaskManager:
         all_day: bool = False,
         location: str = "",
         color: str = "violet",
+        commit: bool = True,
     ) -> CalendarEventDB:
         if end_at is None:
             end_at = start_at + (timedelta(days=1) if all_day else timedelta(hours=1))
@@ -721,7 +726,10 @@ class TaskManager:
             color=color,
         )
         db.add(event)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(event)
         return event
 
@@ -1297,6 +1305,8 @@ class TaskManager:
             if msg.get("role") != "assistant":
                 continue
             content = msg.get("content", "")
+            if re.match(r"^(?:(?:Created|Completed|Already completed) reminder|Created workflow|(?:Already completed|Completed) workflow task):", content, re.I):
+                return None
             if re.search(r"Deleted task:\s*\*\*", content, re.I):
                 return None
             titles = []

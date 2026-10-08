@@ -132,6 +132,85 @@ class API {
         }
     }
 
+    // Bounded workspace runtime
+    static async getWorkspaceComponents() {
+        return (await this.request('/workspace/components')).json();
+    }
+
+    static async updateWorkspaceComponent(id, changes) {
+        return (await this.request(`/workspace/components/${encodeURIComponent(id)}`, {
+            method: 'PATCH', body: JSON.stringify(changes),
+        })).json();
+    }
+
+    static async actOnWorkspaceComponent(id, action) {
+        return (await this.request(`/workspace/components/${encodeURIComponent(id)}/actions`, {
+            method: 'POST', body: JSON.stringify({ action }),
+        })).json();
+    }
+
+    static async listWorkspaceTemplates() {
+        return (await this.request('/workspace/templates')).json();
+    }
+
+    static async getWorkspaceTemplate(id) {
+        return (await this.request(`/workspace/templates/${encodeURIComponent(id)}`)).json();
+    }
+
+    static async createWorkspaceTemplate(template) {
+        return (await this.request('/workspace/templates', {
+            method: 'POST', body: JSON.stringify(template),
+        })).json();
+    }
+
+    static async addWorkspaceTemplateVersion(id, definition) {
+        return (await this.request(`/workspace/templates/${encodeURIComponent(id)}/versions`, {
+            method: 'POST', body: JSON.stringify({ definition }),
+        })).json();
+    }
+
+    static async updateWorkspaceTemplate(id, status) {
+        return (await this.request(`/workspace/templates/${encodeURIComponent(id)}`, {
+            method: 'PATCH', body: JSON.stringify({ status }),
+        })).json();
+    }
+
+    static async instantiateWorkspaceTemplate(id, data = {}, templateVersion = null) {
+        return (await this.request(`/workspace/templates/${encodeURIComponent(id)}/instances`, {
+            method: 'POST', body: JSON.stringify({ data, template_version: templateVersion }),
+        })).json();
+    }
+
+    static async actOnReminder(id, action) {
+        return (await this.request(`/workspace/reminders/${encodeURIComponent(id)}/actions`, {
+            method: 'POST', body: JSON.stringify({ action }),
+        })).json();
+    }
+
+    static async createWorkflow(plan, idempotencyKey = crypto.randomUUID()) {
+        return (await this.request('/workspace/workflows', {
+            method: 'POST', body: JSON.stringify({ plan, idempotency_key: idempotencyKey }),
+        })).json();
+    }
+
+    static async getWorkflows() {
+        return (await this.request('/workspace/workflows')).json();
+    }
+
+    static async actOnWorkflow(id, action) {
+        return (await this.request(`/workspace/workflows/${encodeURIComponent(id)}/actions`, {
+            method: 'POST', body: JSON.stringify({ action }),
+        })).json();
+    }
+
+    static async getWorkspaceNotifications() {
+        return (await this.request('/workspace/notifications')).json();
+    }
+
+    static async ackWorkspaceNotification(id) {
+        return (await this.request(`/workspace/notifications/${encodeURIComponent(id)}/ack`, { method: 'POST' })).json();
+    }
+
     // Models
     static async getModels() {
         const response = await this.request('/ollama/models');

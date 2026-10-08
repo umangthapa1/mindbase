@@ -34,6 +34,16 @@ from memory import memory_manager
 from documents import document_manager
 from research import research_agent
 from intelligence import chat_intelligence, PLACEHOLDER_TITLE_RE
+from capabilities import seed_capabilities
+from workspace_planner import reminder_plan, ReminderInputs
+from workspace_runtime import router as workspace_router, runtime_loop, create_reminder, complete_recent_reminder
+from database import WorkspaceEventDB, WorkspaceNotificationDB, ReminderDB, WorkspaceComponentDB
+from database import WorkflowDB, WorkflowStepDB, WorkflowLinkDB, WorkflowNotificationDB
+from workflow_planner import workflow_plan
+from workflow_runtime import (router as workflow_router, create_workflow,
+                              process_workflows, sync_linked_completion, complete_recent_workflow)
+from workspace_runtime import _lock as runtime_lock
+from component_runtime import router as component_router, seed_component_templates
 
 logger = logging.getLogger(__name__)
 _email_sync_lock = threading.Lock()
@@ -111,6 +121,10 @@ async def ensure_embedding_model_present():
 async def lifespan(app: FastAPI):
     # Initialise the database on startup (not at import time).
     init_db()
+    with SessionLocal() as db:
+        seed_capabilities(db)
+        seed_component_templates(db)
+    runtime_task = asyncio.create_task(runtime_loop(), name="mindbase-workspace-runtime")
     health = await ollama_client.check_health()
     if health:
         try:
@@ -126,11 +140,14 @@ async def lifespan(app: FastAPI):
     if EMAIL_AUTO_SYNC:
         auto_sync_task = asyncio.create_task(_auto_email_sync_loop(), name="mindbase-email-auto-sync")
         logger.info("Background email auto-sync enabled (every %d seconds)", EMAIL_AUTO_SYNC_INTERVAL_SECONDS)
-    yield
-    if auto_sync_task:
-        auto_sync_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await auto_sync_task
+    try:
+        yield
+    finally:
+        for task in (runtime_task, auto_sync_task):
+            if task:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
     # Shutdown: close the shared pooled Ollama HTTP client so its keep-alive
     # connections are released cleanly on reload/exit.
     try:
@@ -140,6 +157,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Mindbase AI Workspace", lifespan=lifespan)
+app.include_router(workspace_router)
+app.include_router(workflow_router)
+app.include_router(component_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -485,8 +505,39 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     context_sources = []
     messages = []
     model = "local-router"
+    plan = None
 
-    if route.tool == "add_task":
+    if route.tool == "workflow":
+        workflow_plan_data, direct_response = workflow_plan(route.query)
+        if workflow_plan_data:
+            plan = {"intent": "create_workflow", "capability_id": "workflows", "confidence": 1.0,
+                    "inputs": workflow_plan_data.model_dump(mode="json"),
+                    "explanation": "Explicit multi-step request validated against local capability handlers."}
+            try:
+                workflow = create_workflow(db, workflow_plan_data, request.conversation_id, user_msg.id)
+                direct_response = f"Created workflow: **{workflow.title}** — {len(workflow_plan_data.steps)} steps. Status: {workflow.status}."
+                actions_taken = [{"action": "create_workflow", "success": True, "item_id": workflow.id,
+                                  "item_type": "workflow", "message": direct_response}]
+                intent, context_sources = "planning", ["workflows"]
+            except HTTPException as exc:
+                direct_response, intent = exc.detail, "clarification"
+        else:
+            intent = "clarification"
+    elif route.tool == "reminder":
+        plan, direct_response = reminder_plan(route.query)
+        if not direct_response:
+            try:
+                reminder = create_reminder(db, ReminderInputs(**plan["inputs"]), request.conversation_id)
+                direct_response = f"Created reminder: **{reminder.label}** — in {plan['inputs']['duration_seconds']} seconds."
+                actions_taken = [{"action": "create_reminder", "success": True, "item_id": reminder.id,
+                                  "item_type": "reminder", "message": direct_response}]
+                intent, context_sources = "planning", ["reminders"]
+            except HTTPException as exc:
+                direct_response = exc.detail
+                intent = "clarification"
+        else:
+            intent = "clarification"
+    elif route.tool == "add_task":
         try:
             payload = parse_task_payload(route.task_text)
         except (ValueError, OverflowError):
@@ -503,13 +554,17 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             direct_response = direct_response or TASK_DETAILS_QUESTION
             intent = "clarification"
     elif route.tool == "complete_task":
-        completed = task_manager.complete_recent_task(route.query, history[:-1], db)
-        if completed and completed.success:
-            actions_taken = [completed.to_dict()]
-            direct_response = completed.message
-            intent, context_sources = "planning", ["tasks"]
+        workflow_result = complete_recent_workflow(db, route.query, history[:-1], request.conversation_id)
+        reminder_result = None if workflow_result else complete_recent_reminder(db, route.query, history[:-1], request.conversation_id)
+        completed = None if workflow_result or reminder_result else task_manager.complete_recent_task(route.query, history[:-1], db)
+        result = workflow_result or reminder_result or (completed.to_dict() if completed else None)
+        if result and result["success"]:
+            actions_taken = [result]
+            direct_response = result["message"]
+            intent, context_sources = "planning", ["workflows" if workflow_result else "reminders" if reminder_result else "tasks"]
+            process_workflows(db)
         else:
-            direct_response = completed.message if completed else "Which task should I mark as completed?"
+            direct_response = result["message"] if result else "Which task should I mark as completed?"
             intent = "clarification"
     elif route.tool == "check_mail":
         email_context_block = _build_email_context(db, route.query)
@@ -537,6 +592,7 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             )
             successful_actions = [a for a in actions_taken if a.get("success")]
             if successful_actions:
+                process_workflows(db)
                 direct_response = "\n\n".join(a["message"] for a in successful_actions)
                 is_event = any(a.get("item_type") == "event" for a in successful_actions)
                 intent = "calendar" if is_event else "planning"
@@ -587,6 +643,8 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
             "context": context_sources,
             "actions": actions_taken,
         }
+        if plan:
+            meta["plan"] = plan
         yield f"data: {json.dumps({'meta': meta})}\n\n"
 
         if direct_response:
@@ -880,7 +938,11 @@ def update_task(task_id: str, data: TaskUpdate, db: Session = Depends(get_db)):
         task.due_date = _parse_date_string(updates["due_date"]) if updates["due_date"] else None
 
     task.updated_at = datetime.utcnow()
-    db.commit()
+    with runtime_lock:
+        db.flush()
+        sync_linked_completion(db, task_id=task.id)
+        db.commit()
+        process_workflows(db)
     db.refresh(task)
 
     return serialize_task(task)
@@ -891,6 +953,7 @@ def delete_task(task_id: str, db: Session = Depends(get_db)):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    db.query(WorkflowLinkDB).filter_by(task_id=task.id).update({"task_id": None})
     db.delete(task)
     db.commit()
     return {"status": "deleted", "id": task_id}
@@ -1222,6 +1285,14 @@ RESET_CONFIRM_TOKEN = "DELETE EVERYTHING"
 # Children before parents: automation artifacts reference runs, attachments and
 # tasks; runs reference rules and emails; messages reference conversations.
 _RESET_ORDER = [
+    ("workflow_notifications", WorkflowNotificationDB),
+    ("workflow_links", WorkflowLinkDB),
+    ("workflow_steps", WorkflowStepDB),
+    ("workflows", WorkflowDB),
+    ("workspace_events", WorkspaceEventDB),
+    ("workspace_notifications", WorkspaceNotificationDB),
+    ("reminders", ReminderDB),
+    ("workspace_components", WorkspaceComponentDB),
     ("automation_artifacts", AutomationArtifactDB),
     ("automation_runs", AutomationRunDB),
     ("email_attachments", EmailAttachmentDB),

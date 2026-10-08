@@ -703,6 +703,10 @@ class ChatManager {
                 message,
                 selectedModel || null
             )) {
+                if (data.meta?.actions?.some(action => action.success && ['reminder', 'workflow'].includes(action.item_type))) {
+                    // Workspace timers and workflows are global, including offscreen streams.
+                    void globalThis.workspaceRuntime?.refresh();
+                }
                 // Keep consuming offscreen responses so the backend can finish,
                 // but never write their chunks or status into another view.
                 if (!isCurrentView()) continue;

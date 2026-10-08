@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, Boolean, ForeignKey, Table, UniqueConstraint
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Float, Text, Boolean, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -162,6 +162,138 @@ class AutomationArtifactDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class CapabilityDB(Base):
+    __tablename__ = "capabilities"
+
+    id = Column(String, primary_key=True)
+    definition = Column(Text, nullable=False)  # Developer-owned JSON, never executable code
+    enabled = Column(Boolean, nullable=False, default=True)
+
+
+class WorkspaceTemplateDB(Base):
+    __tablename__ = "workspace_templates"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, default="")
+    status = Column(String, nullable=False, default="active", index=True)
+    current_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WorkspaceTemplateVersionDB(Base):
+    __tablename__ = "workspace_template_versions"
+    __table_args__ = (UniqueConstraint("template_id", "version", name="uq_workspace_template_version"),)
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    template_id = Column(String, ForeignKey("workspace_templates.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    definition = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WorkspaceComponentDB(Base):
+    __tablename__ = "workspace_components"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    capability_id = Column(String, ForeignKey("capabilities.id"), nullable=False)
+    kind = Column(String, nullable=False)
+    props = Column(Text, nullable=False, default="{}")
+    template_id = Column(String, ForeignKey("workspace_templates.id"), nullable=True, index=True)
+    template_version = Column(Integer, nullable=True)
+    lifecycle = Column(String, nullable=False, default="active", index=True)
+    position = Column(Integer, nullable=False, default=0)
+    visible = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ReminderDB(Base):
+    __tablename__ = "reminders"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    component_id = Column(String, ForeignKey("workspace_components.id"), nullable=False, unique=True)
+    conversation_id = Column(String, nullable=True, index=True)
+    label = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="active", index=True)
+    due_at = Column(DateTime, nullable=True, index=True)  # UTC; null only while paused
+    remaining_seconds = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WorkflowDB(Base):
+    __tablename__ = "workflows"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    component_id = Column(String, ForeignKey("workspace_components.id"), nullable=False, unique=True)
+    conversation_id = Column(String, nullable=True, index=True)
+    idempotency_key = Column(String, nullable=True, unique=True)
+    title = Column(String, nullable=False)
+    plan = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="running", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WorkflowStepDB(Base):
+    __tablename__ = "workflow_steps"
+    __table_args__ = (UniqueConstraint("workflow_id", "key", name="uq_workflow_step_key"),)
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id = Column(String, ForeignKey("workflows.id"), nullable=False, index=True)
+    key = Column(String, nullable=False)
+    position = Column(Integer, nullable=False)
+    definition = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="pending")
+    attempts = Column(Integer, nullable=False, default=0)
+    failure_count = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+    result = Column(Text, nullable=False, default="{}")
+
+
+class WorkflowLinkDB(Base):
+    __tablename__ = "workflow_links"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id = Column(String, ForeignKey("workflows.id"), nullable=False, index=True)
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
+    reminder_id = Column(String, ForeignKey("reminders.id"), nullable=False, unique=True)
+
+
+class WorkflowNotificationDB(Base):
+    __tablename__ = "workflow_notifications"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id = Column(String, ForeignKey("workflows.id"), nullable=False, index=True)
+    step_id = Column(String, ForeignKey("workflow_steps.id"), nullable=False, unique=True)
+    message = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    acknowledged_at = Column(DateTime, nullable=True, index=True)
+
+
+class WorkspaceEventDB(Base):
+    __tablename__ = "workspace_events"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    type = Column(String, nullable=False, index=True)
+    reminder_id = Column(String, ForeignKey("reminders.id"), nullable=True)
+    payload = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WorkspaceNotificationDB(Base):
+    __tablename__ = "workspace_notifications"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    reminder_id = Column(String, ForeignKey("reminders.id"), nullable=False, unique=True)
+    message = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    acknowledged_at = Column(DateTime, nullable=True)
+
+
 def _migrate_sqlite():
     """Add columns/indexes introduced after a DB was first created (SQLite has no
     automatic schema migration). Safe to run on every startup — every statement
@@ -180,6 +312,21 @@ def _migrate_sqlite():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE emails ADD COLUMN tags TEXT DEFAULT ''"))
 
+    if "workspace_components" in tables:
+        existing = {col["name"] for col in inspector.get_columns("workspace_components")}
+        additions = {
+            "template_id": "TEXT",
+            "template_version": "INTEGER",
+            "lifecycle": "TEXT NOT NULL DEFAULT 'active'",
+            "updated_at": "DATETIME",
+        }
+        with engine.begin() as conn:
+            for name, sql_type in additions.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE workspace_components ADD COLUMN {name} {sql_type}"))
+            conn.execute(text("UPDATE workspace_components SET lifecycle = 'active' WHERE lifecycle IS NULL"))
+            conn.execute(text("UPDATE workspace_components SET updated_at = created_at WHERE updated_at IS NULL"))
+
     # ── Hot-path indexes ────────────────────────────────────────────────
     # These back the per-turn reads on the chat prepare path and the schedule
     # context builder: tasks by status/due date, events by start time/title,
@@ -193,6 +340,8 @@ def _migrate_sqlite():
         ("calendar_events", "CREATE INDEX IF NOT EXISTS idx_calendar_events_title ON calendar_events (title)"),
         ("messages", "CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages (conversation_id)"),
         ("notes", "CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes (updated_at)"),
+        ("workspace_components", "CREATE INDEX IF NOT EXISTS idx_workspace_components_template ON workspace_components (template_id, template_version)"),
+        ("workspace_template_versions", "CREATE INDEX IF NOT EXISTS idx_workspace_template_versions_template ON workspace_template_versions (template_id, version)"),
     ]
     with engine.begin() as conn:
         for table, stmt in indexes:
