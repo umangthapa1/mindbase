@@ -178,6 +178,8 @@ class WorkspaceTemplateDB(Base):
     description = Column(String, default="")
     status = Column(String, nullable=False, default="active", index=True)
     current_version = Column(Integer, nullable=False, default=1)
+    source_extension_id = Column(String, nullable=True, index=True)
+    source_extension_version = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
@@ -190,6 +192,43 @@ class WorkspaceTemplateVersionDB(Base):
     template_id = Column(String, ForeignKey("workspace_templates.id"), nullable=False, index=True)
     version = Column(Integer, nullable=False)
     definition = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExtensionDB(Base):
+    __tablename__ = "extensions"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, default="")
+    status = Column(String, nullable=False, default="active", index=True)
+    active_version = Column(Integer, nullable=False, default=1)
+    granted_permissions = Column(Text, nullable=False, default="[]")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExtensionReleaseDB(Base):
+    __tablename__ = "extension_releases"
+    __table_args__ = (UniqueConstraint("extension_id", "version", name="uq_extension_release_version"),)
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    extension_id = Column(String, ForeignKey("extensions.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    manifest = Column(Text, nullable=False)
+    digest = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="active", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ExtensionAuditDB(Base):
+    __tablename__ = "extension_audit"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    extension_id = Column(String, nullable=False, index=True)
+    version = Column(Integer, nullable=True)
+    action = Column(String, nullable=False)
+    detail = Column(Text, nullable=False, default="{}")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -327,6 +366,14 @@ def _migrate_sqlite():
             conn.execute(text("UPDATE workspace_components SET lifecycle = 'active' WHERE lifecycle IS NULL"))
             conn.execute(text("UPDATE workspace_components SET updated_at = created_at WHERE updated_at IS NULL"))
 
+    if "workspace_templates" in tables:
+        existing = {col["name"] for col in inspector.get_columns("workspace_templates")}
+        additions = {"source_extension_id": "TEXT", "source_extension_version": "INTEGER"}
+        with engine.begin() as conn:
+            for name, sql_type in additions.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE workspace_templates ADD COLUMN {name} {sql_type}"))
+
     # ── Hot-path indexes ────────────────────────────────────────────────
     # These back the per-turn reads on the chat prepare path and the schedule
     # context builder: tasks by status/due date, events by start time/title,
@@ -342,6 +389,9 @@ def _migrate_sqlite():
         ("notes", "CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes (updated_at)"),
         ("workspace_components", "CREATE INDEX IF NOT EXISTS idx_workspace_components_template ON workspace_components (template_id, template_version)"),
         ("workspace_template_versions", "CREATE INDEX IF NOT EXISTS idx_workspace_template_versions_template ON workspace_template_versions (template_id, version)"),
+        ("extensions", "CREATE INDEX IF NOT EXISTS idx_extensions_status ON extensions (status)"),
+        ("extension_releases", "CREATE INDEX IF NOT EXISTS idx_extension_releases_extension ON extension_releases (extension_id, version)"),
+        ("extension_audit", "CREATE INDEX IF NOT EXISTS idx_extension_audit_extension ON extension_audit (extension_id, created_at)"),
     ]
     with engine.begin() as conn:
         for table, stmt in indexes:

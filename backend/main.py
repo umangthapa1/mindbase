@@ -44,6 +44,7 @@ from workflow_runtime import (router as workflow_router, create_workflow,
                               process_workflows, sync_linked_completion, complete_recent_workflow)
 from workspace_runtime import _lock as runtime_lock
 from component_runtime import router as component_router, seed_component_templates
+from extension_runtime import router as extension_router
 
 logger = logging.getLogger(__name__)
 _email_sync_lock = threading.Lock()
@@ -160,6 +161,7 @@ app = FastAPI(title="Mindbase AI Workspace", lifespan=lifespan)
 app.include_router(workspace_router)
 app.include_router(workflow_router)
 app.include_router(component_router)
+app.include_router(extension_router)
 
 app.add_middleware(
     CORSMiddleware,

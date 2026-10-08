@@ -211,7 +211,8 @@ def serialize_component_template(db, component):
     return {"id": template.id, "name": template.name, "version": version.version,
             "definition": serialize_definition(version), "current_version": template.current_version,
             "can_upgrade": version.version < template.current_version,
-            "status": template.status}
+            "status": template.status, "source_extension_id": template.source_extension_id,
+            "source_extension_version": template.source_extension_version}
 
 
 def component_lifecycle(db, component, action):

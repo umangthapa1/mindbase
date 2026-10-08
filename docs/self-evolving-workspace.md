@@ -12,6 +12,10 @@ Phase 3 adds [versioned declarative workspace components](components.md). Workfl
 custom instances use immutable, allowlisted JSON templates with safe text/progress/list rendering,
 explicit lifecycle actions, and pinned upgrades. Template data cannot execute code.
 
+Phase 4 adds [declarative extension packs](extensions.md). Packs can compose existing capabilities
+with explicit grants, immutable releases, audit history, enable/disable, and rollback. They still
+cannot add or execute arbitrary code.
+
 ## Try it
 
 Start Mindbase normally, open chat, and send:
@@ -137,7 +141,9 @@ can override their paths.
    bounded retries, linked completion, and workflow status controls.
 3. **Phase 3 — implemented:** composable declarative components, immutable template versions,
    pinned instances, safe rendering, and lifecycle management.
-4. **Phase 4:** bounded extension tooling with explicit permissions, isolation, and rollback.
+4. **Phase 4 — implemented:** declarative extension packs with explicit permission grants,
+   immutable releases, audit history, isolation by non-execution, and rollback.
 5. **Phase 5:** feedback-driven proposals, evaluation, and controlled capability evolution.
 
-Phases 4–5 require their own implementation and verification.
+Phase 5 remains separate implementation work. It is the phase that could propose new capabilities;
+it is not enabled by the declarative extension pack system.

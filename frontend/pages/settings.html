@@ -23,6 +23,15 @@
     .about-row:last-child { border-bottom:none; }
     .about-key { color:var(--text-tertiary); font-weight:300; }
     .about-val { color:var(--text-secondary); font-weight:300; font-family:var(--mono); font-size:12px; }
+    .extension-list { display:grid; gap:10px; }
+    .extension-item { padding:12px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-raised); }
+    .extension-item-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .extension-item-name { color:var(--text-primary); font-size:13px; font-weight:500; overflow-wrap:anywhere; }
+    .extension-item-meta { color:var(--text-tertiary); font-size:11px; margin-top:3px; overflow-wrap:anywhere; }
+    .extension-item-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    .extension-item-actions button { font-size:11px; }
+    #extensionManifest { width:100%; min-height:150px; resize:vertical; box-sizing:border-box; font:11px var(--mono); color:var(--text-primary); background:var(--bg-void); border:1px solid var(--border-mid); border-radius:7px; padding:10px; }
+    #extensionGrants { width:100%; box-sizing:border-box; }
 
     /* ── Accent Color swatches ── */
     .accent-grid {
@@ -196,6 +205,22 @@
       <div style="margin-top:12px">
         <button class="btn btn-danger btn-full" id="clearMemoriesBtn">Clear all memories</button>
       </div>
+    </div>
+
+    <!-- Controlled declarative extensions -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Extensions</div>
+      <div class="setting-desc" style="margin-bottom:12px">Install local declarative packs with explicit permissions. Executable code and arbitrary entrypoints are not accepted.</div>
+      <div id="extensionList" class="extension-list" aria-live="polite"><div class="setting-desc">Loading extensions…</div></div>
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;color:var(--text-secondary);font-size:12px">Install a manifest</summary>
+        <div style="display:grid;gap:8px;margin-top:10px">
+          <textarea id="extensionManifest" spellcheck="false" aria-label="Extension JSON manifest" placeholder='{"schema_version":1,"id":"my-pack","name":"My pack","permissions":[],"templates":[...],"workflows":[...]}'></textarea>
+          <input id="extensionGrants" type="text" placeholder="Granted permissions, comma-separated" aria-label="Granted extension permissions">
+          <button class="btn btn-ghost btn-full" id="installExtensionBtn">Validate and install</button>
+          <div class="setting-desc">The backend validates the complete manifest and permission grant before storing it.</div>
+        </div>
+      </details>
     </div>
 
     <!-- Data -->
@@ -523,11 +548,99 @@
     if (window.MindbaseAccent) window.MindbaseAccent.setAccent(window.MindbaseAccent.getStoredAccentState());
   });
 
+  /* ── Declarative extensions ── */
+  const extensionList = document.getElementById('extensionList');
+  const extensionManifest = document.getElementById('extensionManifest');
+  const extensionGrants = document.getElementById('extensionGrants');
+  const installExtensionBtn = document.getElementById('installExtensionBtn');
+
+  async function extensionRequest(path, options = {}) {
+    const response = await fetch(`${API_BASE}/workspace/extensions${path}`, {
+      headers: { 'Content-Type': 'application/json' }, ...options,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Extension request failed (${response.status})`);
+    }
+    return response.json();
+  }
+
+  function extensionButton(label, action, version = null) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'btn btn-ghost'; button.textContent = label;
+    button.dataset.extensionAction = action;
+    if (version !== null) button.dataset.extensionVersion = String(version);
+    return button;
+  }
+
+  function renderExtensions(extensions) {
+    extensionList.replaceChildren();
+    if (!extensions.length) {
+      extensionList.appendChild(Object.assign(document.createElement('div'), {
+        className: 'setting-desc', textContent: 'No extensions installed.'
+      }));
+      return;
+    }
+    extensions.forEach(extension => {
+      const item = document.createElement('article'); item.className = 'extension-item';
+      const head = document.createElement('div'); head.className = 'extension-item-head';
+      const name = document.createElement('div'); name.className = 'extension-item-name'; name.textContent = extension.name;
+      const status = document.createElement('span'); status.className = 'extension-item-meta'; status.textContent = extension.status;
+      head.append(name, status);
+      const meta = document.createElement('div'); meta.className = 'extension-item-meta';
+      meta.textContent = `v${extension.active_version} · ${extension.granted_permissions.length ? extension.granted_permissions.join(', ') : 'no write permissions'}`;
+      const actions = document.createElement('div'); actions.className = 'extension-item-actions';
+      if (extension.status === 'active') actions.appendChild(extensionButton('Disable', 'disable'));
+      else if (extension.status === 'disabled') actions.appendChild(extensionButton('Enable', 'enable'));
+      if (extension.status !== 'uninstalled') {
+        extension.releases.filter(release => release.version !== extension.active_version)
+          .forEach(release => actions.appendChild(extensionButton(`Rollback to v${release.version}`, 'rollback', release.version)));
+        actions.appendChild(extensionButton('Uninstall', 'uninstall'));
+      }
+      actions.addEventListener('click', async event => {
+        const button = event.target.closest('button[data-extension-action]');
+        if (!button) return;
+        button.disabled = true;
+        try {
+          await extensionRequest(`/${encodeURIComponent(extension.id)}/actions`, {
+            method: 'POST', body: JSON.stringify({ action: button.dataset.extensionAction,
+              ...(button.dataset.extensionVersion ? { version: Number(button.dataset.extensionVersion) } : {}) }),
+          });
+          toast(`Extension ${button.dataset.extensionAction} completed.`, 'ok');
+          await loadExtensions();
+        } catch (error) { toast(error.message, 'error'); button.disabled = false; }
+      });
+      item.append(head, meta, actions); extensionList.appendChild(item);
+    });
+  }
+
+  async function loadExtensions() {
+    try { renderExtensions(await extensionRequest('')); }
+    catch (error) { extensionList.replaceChildren(Object.assign(document.createElement('div'), {
+      className: 'setting-desc', textContent: `Could not load extensions: ${error.message}`
+    })); }
+  }
+
+  installExtensionBtn.addEventListener('click', async () => {
+    let parsed;
+    try { parsed = JSON.parse(extensionManifest.value); }
+    catch (_) { toast('Enter valid JSON for the extension manifest.', 'error'); return; }
+    const grants = extensionGrants.value.split(',').map(value => value.trim()).filter(Boolean);
+    installExtensionBtn.disabled = true;
+    try {
+      await extensionRequest('', { method: 'POST', body: JSON.stringify({ manifest: parsed, grant_permissions: grants }) });
+      extensionManifest.value = ''; extensionGrants.value = '';
+      toast('Declarative extension installed.', 'ok'); await loadExtensions();
+    } catch (error) { toast(error.message, 'error'); }
+    finally { installExtensionBtn.disabled = false; }
+  });
+
   buildAccentGrid();
   renderAccentState();
 
   loadModels();
   loadPrefs();
+  loadExtensions();
 </script>
 </body>
 </html>

@@ -181,6 +181,22 @@ class API {
         })).json();
     }
 
+    static async listWorkspaceExtensions() {
+        return (await this.request('/workspace/extensions')).json();
+    }
+
+    static async installWorkspaceExtension(manifest, grantPermissions = []) {
+        return (await this.request('/workspace/extensions', {
+            method: 'POST', body: JSON.stringify({ manifest, grant_permissions: grantPermissions }),
+        })).json();
+    }
+
+    static async actOnWorkspaceExtension(id, action, version = null) {
+        return (await this.request(`/workspace/extensions/${encodeURIComponent(id)}/actions`, {
+            method: 'POST', body: JSON.stringify({ action, ...(version === null ? {} : { version }) }),
+        })).json();
+    }
+
     static async actOnReminder(id, action) {
         return (await this.request(`/workspace/reminders/${encodeURIComponent(id)}/actions`, {
             method: 'POST', body: JSON.stringify({ action }),
