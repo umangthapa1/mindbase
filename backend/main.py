@@ -43,7 +43,7 @@ from workflow_planner import workflow_plan
 from workflow_runtime import (router as workflow_router, create_workflow,
                               process_workflows, sync_linked_completion, complete_recent_workflow)
 from workspace_runtime import _lock as runtime_lock
-from component_runtime import router as component_router, seed_component_templates
+from component_runtime import router as component_router, seed_component_templates, component_lifecycle
 from extension_runtime import router as extension_router
 
 logger = logging.getLogger(__name__)
@@ -176,6 +176,46 @@ app.add_middleware(
 def _is_email_query(message: str, history=None) -> bool:
     """Compatibility helper; all tool selection uses the same explicit policy."""
     return route_message(message, history).tool == "check_mail"
+
+
+def _delete_named_widget(db: Session, message: str):
+    """Delete one named presentation widget without touching its work item."""
+    match = _re.match(
+        r"^(?:delete|remove)\s+(?:the\s+)?(.+?)\s+(?:widget|panel|component)\b",
+        message.strip(), _re.I,
+    )
+    if not match:
+        return None, "Which widget should I delete? Please name one widget."
+    target = set(_re.findall(r"[\w]+", match.group(1).lower())) - {"the", "my", "workspace"}
+    if not target:
+        return None, "Which widget should I delete? Please name one widget."
+
+    candidates = []
+    for component in db.query(WorkspaceComponentDB).all():
+        if component.lifecycle == "deleted":
+            continue
+        label = ""
+        if component.kind == "reminder":
+            reminder = db.query(ReminderDB).filter_by(component_id=component.id).one_or_none()
+            label = reminder.label if reminder else ""
+        elif component.kind == "workflow":
+            workflow = db.query(WorkflowDB).filter_by(component_id=component.id).one_or_none()
+            label = workflow.title if workflow else ""
+        else:
+            props = json.loads(component.props or "{}")
+            label = props.get("title") or props.get("label") or ""
+        words = set(_re.findall(r"[\w]+", label.lower()))
+        if words and words <= target:
+            candidates.append((component, label))
+
+    if len(candidates) != 1:
+        return None, "Which widget should I delete? Please use its exact widget title."
+    component, label = candidates[0]
+    component_lifecycle(db, component, "delete")
+    return {
+        "action": "delete_widget", "success": True, "item_id": component.id,
+        "item_type": "widget", "message": f"Deleted widget: **{label}**",
+    }, ""
 
 def _extract_email_search_terms(message: str) -> dict:
     """Pull out useful filters from the natural language query."""
@@ -509,7 +549,16 @@ async def send_message(request: ChatRequest, db: Session = Depends(get_db)):
     model = "local-router"
     plan = None
 
-    if route.tool == "workflow":
+    if route.tool == "delete_widget":
+        result, direct_response = _delete_named_widget(db, route.query)
+        if result:
+            actions_taken = [result]
+            direct_response = result["message"]
+            intent, context_sources = "planning", ["components"]
+        else:
+            direct_response = direct_response or "Which widget should I delete?"
+            intent = "clarification"
+    elif route.tool == "workflow":
         workflow_plan_data, direct_response = workflow_plan(route.query)
         if workflow_plan_data:
             plan = {"intent": "create_workflow", "capability_id": "workflows", "confidence": 1.0,

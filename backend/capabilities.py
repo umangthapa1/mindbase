@@ -22,10 +22,18 @@ CORE_CAPABILITIES = {
 
 
 def seed_capabilities(db, *, commit=True):
-    # Preserve user enable/disable choices across restarts.
+    # init_db normalizes prototype constraints before ORM inserts. Keep the
+    # developer-owned definitions current while preserving enable/disable choices.
     for key, definition in CORE_CAPABILITIES.items():
-        if db.get(CapabilityDB, key) is None:
-            db.add(CapabilityDB(id=key, definition=json.dumps(definition), enabled=True))
+        row = db.get(CapabilityDB, key)
+        encoded = json.dumps(definition)
+        if row is None:
+            db.add(CapabilityDB(id=key, name=definition["name"], definition=encoded, enabled=True))
+        else:
+            if not row.name:
+                row.name = definition["name"]
+            if row.definition != encoded:
+                row.definition = encoded
     if commit:
         db.commit()
     else:

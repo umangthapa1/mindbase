@@ -166,6 +166,8 @@ class CapabilityDB(Base):
     __tablename__ = "capabilities"
 
     id = Column(String, primary_key=True)
+    # Kept for compatibility with the pre-Phase-1 capabilities table.
+    name = Column(String, nullable=True)
     definition = Column(Text, nullable=False)  # Developer-owned JSON, never executable code
     enabled = Column(Boolean, nullable=False, default=True)
 
@@ -327,7 +329,8 @@ class WorkspaceNotificationDB(Base):
     __tablename__ = "workspace_notifications"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    reminder_id = Column(String, ForeignKey("reminders.id"), nullable=False, unique=True)
+    # Legacy notifications include non-reminder alerts; retain them without a fake reminder.
+    reminder_id = Column(String, ForeignKey("reminders.id"), nullable=True, unique=True)
     message = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     acknowledged_at = Column(DateTime, nullable=True)
@@ -338,6 +341,9 @@ def _migrate_sqlite():
     automatic schema migration). Safe to run on every startup — every statement
     is idempotent (a column-existence guard, or CREATE ... IF NOT EXISTS)."""
     from sqlalchemy import inspect, text
+    from runtime_migrations import migrate_runtime_tables
+    migrate_runtime_tables(engine, [CapabilityDB, WorkspaceComponentDB, ReminderDB,
+                                    WorkspaceEventDB, WorkspaceNotificationDB])
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
 
@@ -350,6 +356,16 @@ def _migrate_sqlite():
         if "tags" not in existing:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE emails ADD COLUMN tags TEXT DEFAULT ''"))
+
+    if "capabilities" in tables:
+        existing = {col["name"] for col in inspector.get_columns("capabilities")}
+        with engine.begin() as conn:
+            if "name" not in existing:
+                conn.execute(text("ALTER TABLE capabilities ADD COLUMN name TEXT DEFAULT ''"))
+            if "definition" not in existing:
+                conn.execute(text("ALTER TABLE capabilities ADD COLUMN definition TEXT NOT NULL DEFAULT '{}'"))
+            if "enabled" not in existing:
+                conn.execute(text("ALTER TABLE capabilities ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT 1"))
 
     if "workspace_components" in tables:
         existing = {col["name"] for col in inspector.get_columns("workspace_components")}

@@ -5,10 +5,10 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database import (Base, WorkspaceComponentDB, WorkspaceTemplateDB, WorkspaceTemplateVersionDB,
+from database import (Base, ReminderDB, TaskDB, WorkspaceComponentDB, WorkspaceTemplateDB, WorkspaceTemplateVersionDB,
                       WorkflowDB, WorkflowStepDB)
 from component_runtime import TemplateDefinition, seed_component_templates
-from test_chat_tool_routing import chat_client
+from test_chat_tool_routing import chat_client, send
 
 
 def definition(version="v1", *, actions=True):
@@ -156,3 +156,15 @@ def test_template_definitions_survive_reopen_and_seed_is_idempotent(tmp_path):
         assert template.current_version == 1
         assert json.loads(db.query(WorkspaceTemplateVersionDB).one().definition)["schema_version"] == 1
     engine.dispose()
+
+
+def test_chat_delete_widget_does_not_delete_underlying_reminder_or_task(chat_client):
+    client, db = chat_client
+    conversation_id, _, _ = send(client, "remind me to check on grandpa in 60 seconds")
+    _, meta, reply = send(client, "delete the check up on grandpa widget", conversation_id)
+    assert meta["tool"] == "delete_widget"
+    assert meta["actions"][0]["item_type"] == "widget"
+    assert "Deleted widget" in reply
+    assert db.query(TaskDB).count() == 0
+    assert db.query(ReminderDB).one().status == "active"
+    assert db.query(WorkspaceComponentDB).one().lifecycle == "deleted"

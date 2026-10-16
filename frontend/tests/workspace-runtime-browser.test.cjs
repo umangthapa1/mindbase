@@ -191,16 +191,18 @@ test('real runtime: reminders and durable workflow retry, cancellation, linked c
     await waitFor(() => api('/workspace/reminders'), reminders => reminders.find(row => row.id === grandpa.id).status === 'paused', 'pause before restart');
     t.diagnostic('Verified multiple scheduled alerts, acknowledgement, persisted move/close, and restore.');
 
-    for (const width of [320, 375, 760, 1280]) {
-        await call('browsingContext.setViewport', { context, viewport: { width, height: 800 } });
+    for (const [width, height] of [[320, 800], [375, 800], [760, 800], [1280, 800], [1366, 768]]) {
+        await call('browsingContext.setViewport', { context, viewport: { width, height } });
         const layout = await evaluate(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             const host = document.querySelector('#workspaceComponents'); const send = document.querySelector('#sendBtn').getBoundingClientRect();
             return { width: innerWidth, client: host.clientWidth, scroll: host.scrollWidth, sendRight: send.right,
-                controls: Array.from(document.querySelectorAll('.workspace-card-controls')).map(el => el.getBoundingClientRect().right) };`);
+                controls: Array.from(document.querySelectorAll('.workspace-card-controls')).map(el => el.getBoundingClientRect().right),
+                titles: Array.from(document.querySelectorAll('.workspace-card-title')).map(el => ({ width: el.getBoundingClientRect().width, text: el.textContent })) };`);
         assert.equal(layout.width, width);
         assert.ok(layout.scroll <= layout.client + 1, `widgets overflow at ${width}px`);
         assert.ok(layout.controls.every(right => right <= width), `widget controls clip at ${width}px`);
         assert.ok(layout.sendRight <= width, `composer clips at ${width}px`);
+        assert.ok(layout.titles.every(title => title.width >= 80), `widget titles collapse at ${width}px: ${JSON.stringify(layout.titles)}`);
     }
 
     // Stop delivery, then let a reminder become overdue while the backend is down.
@@ -260,8 +262,8 @@ test('real runtime: reminders and durable workflow retry, cancellation, linked c
     await reload();
     await waitFor(() => evaluate(`return document.querySelector('[data-component-id="${workflow.component_id}"] .workspace-template-list')?.textContent;`),
         text => text?.includes('wait_for_reminder · waiting'), 'workflow wait survives browser reload');
-    for (const width of [320, 375, 760, 1280]) {
-        await call('browsingContext.setViewport', { context, viewport: { width, height: 800 } });
+    for (const [width, height] of [[320, 800], [375, 800], [760, 800], [1280, 800], [1366, 768]]) {
+        await call('browsingContext.setViewport', { context, viewport: { width, height } });
         const layout = await evaluate(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             const host = document.querySelector('#workspaceComponents'); const card = document.querySelector('[data-component-id="${workflow.component_id}"]');
             return { client: host.clientWidth, scroll: host.scrollWidth, cardRight: card.getBoundingClientRect().right };`);
@@ -345,5 +347,11 @@ test('real runtime: reminders and durable workflow retry, cancellation, linked c
         'archived component restored');
     await waitFor(() => evaluate(`return Boolean(document.querySelector('[data-component-id="${panel.id}"].workspace-template-card'));`),
         Boolean, 'restored declarative panel displayed');
-    t.diagnostic('Verified a versioned declarative panel: safe text-only rendering, progress/list nodes, upgrade, archive, and restore.');
+    await click(panel.id, 'delete');
+    await evaluate("document.querySelector('.confirm-ok')?.click(); return true;");
+    await waitFor(() => api('/workspace/components'), rows => rows.find(component => component.id === panel.id).lifecycle === 'deleted',
+        'widget permanently deleted');
+    await waitFor(() => evaluate(`return !document.querySelector('[data-component-id="${panel.id}"]');`),
+        Boolean, 'deleted widget removed from UI');
+    t.diagnostic('Verified a versioned declarative panel: safe text-only rendering, progress/list nodes, upgrade, archive, restore, and delete.');
 });

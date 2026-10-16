@@ -18,6 +18,7 @@ function fixture(overrides = {}) {
         addEventListener() {}, removeEventListener() {} };
     const context = vm.createContext({ document, console, setInterval, clearInterval,
         requestAnimationFrame: callback => callback(),
+        confirmDialog: overrides.confirmDialog,
         API: { getWorkspaceComponents: async () => [], getWorkspaceNotifications: async () => [],
             ackWorkspaceNotification: async id => state.acks.push(id), ...overrides },
         toast: message => { state.toasts.push(message); return { isConnected: true }; },
@@ -219,4 +220,16 @@ test('archived template components are restored through component lifecycle API'
         card: { contains: () => false, querySelectorAll: () => [] } });
     await runtime.act('panel', 'archive');
     assert.deepEqual(calls, [['panel', 'archive']]);
+});
+
+test('deleting a widget requires confirmation and uses the permanent component action', async () => {
+    const calls = [];
+    const { runtime } = fixture({
+        confirmDialog: async message => { assert.match(message, /continue running/); return true; },
+        actOnWorkspaceComponent: async (...args) => calls.push(args),
+    });
+    runtime.cards.set('widget', { component: { kind: 'reminder', props: { id: 'reminder-id' } },
+        card: { contains: () => false, querySelectorAll: () => [] } });
+    await runtime.act('widget', 'delete');
+    assert.deepEqual(calls, [['widget', 'delete']]);
 });

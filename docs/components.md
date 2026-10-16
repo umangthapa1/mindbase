@@ -100,10 +100,14 @@ Component actions:
 | `archive` | Marks the component archived and hides it; its linked workflow/reminder continues running |
 | `restore` | Makes an archived component active and visible |
 | `upgrade` | Pins the component to its template's current version |
+| `delete` | Permanently removes the widget from the workspace UI; its linked workflow/reminder continues running |
 | `close` / `show` | Existing visibility-only controls; closing does not stop execution |
 | `earlier` / `later` | Existing durable ordering controls |
 
-Archived and closed components appear in the accessible “Closed widgets” group. Restore buttons
+Archived and closed components appear in the accessible “Closed widgets” group. Deleted widgets
+do not appear there and cannot be restored through the UI. Delete always requires confirmation.
+The underlying reminder/workflow remains durable so deleting a presentation widget cannot
+silently cancel work. Restore buttons
 are keyboard-focusable. Workflow panels retain retry/cancel controls, and custom panels render
 only the actions declared by their template. Poll refreshes preserve focus and never execute
 template data.

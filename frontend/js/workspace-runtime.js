@@ -106,7 +106,8 @@ class WorkspaceRuntime {
         const controls = this.node('div', 'workspace-card-controls');
         controls.append(this.button('↑', `Move ${noun} earlier`, 'earlier'),
             this.button('↓', `Move ${noun} later`, 'later'),
-            this.button('×', `Close widget; ${noun} keeps running`, 'close'));
+            this.button('×', `Close widget; ${noun} keeps running`, 'close'),
+            this.button('Delete', `Delete ${noun} widget; execution continues`, 'delete'));
         heading.append(title, controls);
         const countdown = this.node('div', 'workspace-countdown');
         countdown.setAttribute('role', 'timer');
@@ -143,7 +144,8 @@ class WorkspaceRuntime {
         controls.append(this.button('↑', 'Move component earlier', 'earlier'),
             this.button('↓', 'Move component later', 'later'),
             this.button('×', 'Close component; execution continues', 'close'),
-            this.button('Archive', 'Archive component', 'archive'));
+            this.button('Archive', 'Archive component', 'archive'),
+            this.button('Delete', 'Delete component widget; execution continues', 'delete'));
         heading.append(title, controls);
         const body = this.node('div', 'workspace-template-body');
         const status = this.node('p', 'workspace-status');
@@ -253,7 +255,7 @@ class WorkspaceRuntime {
         const focus = document.activeElement;
         const focusCard = focus?.closest?.('[data-component-id]')?.dataset.componentId;
         const focusControl = focus?.dataset.control;
-        const visible = components.filter(component => component.visible && component.lifecycle !== 'archived' && this.renderers[component.kind]);
+        const visible = components.filter(component => component.visible && !['archived', 'deleted'].includes(component.lifecycle) && this.renderers[component.kind]);
         const ids = new Set(visible.map(component => component.id));
         for (const [id, entry] of this.cards) {
             if (!ids.has(id)) { entry.card.remove(); this.cards.delete(id); }
@@ -293,8 +295,8 @@ class WorkspaceRuntime {
             const current = this.host.children[index];
             if (current !== entry.card) this.host.insertBefore(entry.card, current || null);
         });
-        this.renderClosed(components.filter(component => (!component.visible || component.lifecycle === 'archived') && this.renderers[component.kind]));
-        this.host.hidden = !visible.length && !components.some(component => !component.visible);
+        this.renderClosed(components.filter(component => (!component.visible || component.lifecycle === 'archived') && component.lifecycle !== 'deleted' && this.renderers[component.kind]));
+        this.host.hidden = !visible.length && !components.some(component => !component.visible && component.lifecycle !== 'deleted');
         this.updateCountdowns();
         // Moving a focused node or replacing action buttons must retain keyboard position.
         if (focusCard && focusControl && !document.activeElement?.closest?.('[data-component-id]')) {
@@ -357,6 +359,12 @@ class WorkspaceRuntime {
 
     async act(componentId, action) {
         if (this.mutating) return;
+        if (action === 'delete') {
+            const confirm = globalThis.confirmDialog;
+            if (typeof confirm !== 'function' || !await confirm(
+                'Delete this widget permanently? Its reminder or workflow will continue running.',
+                { confirmText: 'Delete widget', danger: true })) return;
+        }
         this.mutating = true;
         this.version++;
         const entry = this.cards.get(componentId);
@@ -367,7 +375,7 @@ class WorkspaceRuntime {
         }
         entry?.card.querySelectorAll('button').forEach(button => { button.disabled = true; });
         try {
-            if (['archive', 'restore', 'upgrade'].includes(action)) {
+            if (['archive', 'restore', 'upgrade', 'delete'].includes(action)) {
                 await API.actOnWorkspaceComponent(componentId, action);
             } else if (['earlier', 'later', 'close', 'show'].includes(action)) {
                 await API.updateWorkspaceComponent(componentId, action === 'close' || action === 'show'

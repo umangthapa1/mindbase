@@ -115,7 +115,7 @@ class InstanceCreate(BaseModel):
 
 class ComponentAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["archive", "restore", "upgrade"]
+    action: Literal["archive", "restore", "upgrade", "delete"]
 
 
 class TemplateStatusUpdate(BaseModel):
@@ -217,7 +217,13 @@ def serialize_component_template(db, component):
 
 def component_lifecycle(db, component, action):
     now = utcnow()
-    if action == "archive":
+    if action == "delete":
+        # Delete the presentation instance only. The linked reminder/workflow
+        # continues running and remains durable; this avoids accidental data loss.
+        component.lifecycle, component.visible = "deleted", False
+    elif component.lifecycle == "deleted":
+        raise HTTPException(409, "Deleted widgets cannot be restored or upgraded")
+    elif action == "archive":
         component.lifecycle, component.visible = "archived", False
     elif action == "restore":
         component.lifecycle, component.visible = "active", True

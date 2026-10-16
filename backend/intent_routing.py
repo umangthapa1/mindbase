@@ -14,6 +14,7 @@ TOOL_DESCRIPTIONS = {
     "add_task": "Create an explicitly requested to-do; do NOT use for timer/reminder requests or questions about existing mail.",
     "reminder": "Create a validated relative timer/reminder; clarify unsupported timing and never substitute a task.",
     "workflow": "Validate and execute an explicit multi-step task/reminder workflow; never run only part of an unclear request.",
+    "delete_widget": "Delete one explicitly named workspace widget only; never delete its underlying task or reminder.",
     "complete_task": "Complete the single task just discussed; do NOT use for negations, future plans, or ambiguous task references.",
     "check_mail": "Look up existing emails, messages or replies in the synced inbox; do NOT use when the user wants a task reminding them to handle mail.",
 }
@@ -31,7 +32,7 @@ TASK_DETAILS_QUESTION = "What would you like me to add as a task?"
 
 @dataclass(frozen=True)
 class ToolRoute:
-    tool: Literal["add_task", "complete_task", "reminder", "workflow", "check_mail", "schedule", "chat", "clarify"]
+    tool: Literal["add_task", "complete_task", "reminder", "workflow", "delete_widget", "check_mail", "schedule", "chat", "clarify"]
     query: str
     task_text: str = ""
     question: str = ""
@@ -139,6 +140,9 @@ def route_message(message: str, history=None) -> ToolRoute:
     # Cancellation/negation is not permission, including during clarification.
     if re.match(r"^(?:don't|do not|never|no thanks|never mind|nevermind|forget it)\b", lower) or re.fullmatch(r"(?:no|cancel)[.!?]*", lower):
         return ToolRoute("chat", message)
+
+    if re.match(r"^(?:delete|remove)\b", lower) and re.search(r"\b(?:widget|panel|component)\b", lower):
+        return ToolRoute("delete_widget", text)
 
     if is_workflow_request(text):
         return ToolRoute("workflow", text)

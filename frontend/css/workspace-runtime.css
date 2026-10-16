@@ -17,10 +17,10 @@
   border-radius: 10px;
   background: var(--bg-surface);
 }
-.workspace-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
-.workspace-card-title { margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.workspace-card-heading { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.workspace-card-title { flex: 1 1 120px; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; word-break: normal; }
 .workspace-card-controls, .workspace-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.workspace-card-controls { flex-shrink: 0; }
+.workspace-card-controls { flex: 0 1 auto; max-width: 100%; min-width: 0; }
 .workspace-button {
   min-height: 32px;
   min-width: 32px;
@@ -64,4 +64,17 @@
 @media (max-width: 600px) {
   .workspace-components { padding: 10px 14px; max-height: 30vh; }
   .workspace-card { padding: 10px; }
+}
+
+/* Short desktop viewports such as 1366×768 need to preserve chat space while
+   keeping the widget rail usable. The main page remains internally scrollable. */
+@media (min-width: 761px) and (max-height: 820px) {
+  .workspace-components { max-height: 25vh; padding: 8px 20px; gap: 8px; }
+  .workspace-card { padding: 10px; }
+  .workspace-countdown { font-size: 22px; margin-top: 6px; }
+  .workspace-status { margin-bottom: 7px; }
+}
+
+@media (min-width: 761px) and (max-width: 1120px) {
+  .workspace-components { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 }
