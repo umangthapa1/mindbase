@@ -222,7 +222,13 @@ embeddings stubbed. The legacy direct suite includes destructive memory tests;
 do not run it against your real workspace. Frontend checks are available with
 `node --test frontend/tests/*.test.cjs` (the layout check uses installed Firefox).
 
-Current coverage includes natural-language due dates, memory upserts, email query routing, chat context assembly, and email automations. The standalone scripts `backend/test.py` and `backend/test_scheduling.py` are manual checks rather than pytest tests.
+Current coverage includes natural-language due dates, memory upserts, email query routing, chat context assembly, email automations, and the offline intelligence evaluation corpus. Run the intelligence baseline separately with:
+
+```bash
+venv/bin/python backend/tests/run_isolated.py -q backend/tests/test_offline_intelligence_eval.py --tb=short --disable-warnings
+```
+
+See [`docs/intelligence-evaluation.md`](./docs/intelligence-evaluation.md) for the corpus and its safety boundaries. The standalone scripts `backend/test.py` and `backend/test_scheduling.py` are manual checks rather than pytest tests.
 
 ## Documentation
 
